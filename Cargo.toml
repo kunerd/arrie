@@ -1,0 +1,10 @@
+[package]
+name = "gta2_viewer"
+version = "0.1.0"
+authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
+
+[dependencies]
+byteorder = "1"
+piston_window = "0.66.0"
+find_folder = "0.3.0"
+# find_folder = "0.3.0"
