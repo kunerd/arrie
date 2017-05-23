@@ -7,4 +7,9 @@ authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
 byteorder = "1"
 piston_window = "0.66.0"
 find_folder = "0.3.0"
+
+[dependencies.sdl2]
+git = "https://github.com/AngryLawyer/rust-sdl2"
+features = ["image"]
+
 # find_folder = "0.3.0"

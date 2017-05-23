@@ -1,6 +1,14 @@
 extern crate byteorder;
 extern crate piston_window;
 // extern crate find_folder;
+extern crate sdl2;
+
+use std::env;
+use sdl2::image::{LoadTexture, INIT_PNG, INIT_JPG};
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::render::Texture;
 
 use piston_window::*;
 use std::path::Path;
@@ -15,7 +23,8 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 struct StyleFile {
-    header: StyleFileHeader
+    header: StyleFileHeader,
+    chunks: StyleFileChunks
 }
 
 #[derive(Debug)]
@@ -24,15 +33,24 @@ struct StyleFileHeader {
     version: u16
 }
 
+#[derive(Debug)]
+struct StyleFileChunks {
+    tiles: Vec<Vec<u8>>
+}
+
 impl StyleFile {
     fn from_file(file: &File) -> StyleFile {
         let mut buf_reader = BufReader::new(file);
 
         let header = read_header(&mut buf_reader);
-        read_chunks(&mut buf_reader);
+        let chunks = match read_chunks(&mut buf_reader) {
+            Some(c) => c,
+            None => panic!("Error while reading chunks.")
+        };
 
         StyleFile {
-            header
+            header,
+            chunks
         }
     }
 }
@@ -94,7 +112,7 @@ impl FromStr for StyleFileChunkTypes {
     }
 }
 
-fn read_chunks<T: Read + Seek>(buf_reader: &mut T) {
+fn read_chunks<T: Read + Seek>(mut buf_reader: &mut T) -> Option<StyleFileChunks> {
     let mut buffer = [0; 4];
 
     loop {
@@ -102,22 +120,56 @@ fn read_chunks<T: Read + Seek>(buf_reader: &mut T) {
 
         let chunk_type = match String::from_utf8(buffer.to_vec()) {
             Ok(s) => s,
-            Err(_) => break
+            Err(_) => return None
         };
 
         let size = match buf_reader.read_u32::<NativeEndian>() {
             Ok(s) => s,
-            Err(_) => break
+            Err(_) => return None
         };
 
         println!("Chunk-type: {}\nChunk size: {}", chunk_type, size);
+        buf_reader.seek(SeekFrom::Current(256*256*7 as i64)).unwrap();
 
-        match buf_reader.seek(SeekFrom::Current(size as i64)) {
-            Ok(_) => (),
-            Err(_) => break,
-        };
+        match StyleFileChunkTypes::from_str(&chunk_type) {
+            Ok(StyleFileChunkTypes::Tiles) => {
+                let tiles = load_tiles(&mut buf_reader);
+                return Some(StyleFileChunks{ tiles })
+            },
+            Ok(_) => {},
+            Err(_) => println!("Tile parse error.")
+        }
+
+        buf_reader.seek(SeekFrom::Current(size as i64)).unwrap();
+    }
+}
+
+const  PAGE_SIZE: usize = 256;
+const  IMAGE_SIZE: usize = 64;
+
+fn load_tiles<T: Read + Seek>(buf_reader: &mut T) -> Vec<Vec<u8>> {
+    let mut tiles: Vec<Vec<u8>> = Vec::with_capacity(16); // one page
+
+    // load page
+    let mut page: [u8; PAGE_SIZE*PAGE_SIZE] = [0; PAGE_SIZE*PAGE_SIZE];
+    for pixel in page.iter_mut() {
+        *pixel = buf_reader.read_u8().unwrap();
+    }
+    let page = page;
+
+    for id in 0..1 {
+        let mut tile = Vec::with_capacity(IMAGE_SIZE*IMAGE_SIZE);
+
+        for y in 0..IMAGE_SIZE {
+            for x in 0..IMAGE_SIZE {
+                // tile.push(page[(y + (id / 4) * 64) *4 256 + (x + (id % 4) * 64)]);
+                tile.push(page[(y * PAGE_SIZE) + x]);
+            }
+        }
+        tiles.push(tile);
     }
 
+    tiles
 }
 
 impl fmt::Display for StyleFileHeader {
@@ -138,52 +190,49 @@ fn main() {
 
     let style = StyleFile::from_file(&file);
 
-    println!("{:#?}", style);
 
-    let opengl = OpenGL::V3_2;
-    let mut window: PistonWindow =
-        WindowSettings::new("piston: image", [300, 300])
-        .exit_on_esc(true)
-        .opengl(opengl)
-        .build()
-        .unwrap();
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
 
-    let rust_logo = Path::new("data/rust.png");
-    
-    let rust_logo = Texture::from_path(
-            &mut window.factory,
-            &rust_logo,
-            Flip::None,
-            &TextureSettings::new()
-        ).unwrap();
+    let mut windows = Vec::new();
 
-    window.set_lazy(true);
-    while let Some(e) = window.next() {
-        window.draw_2d(&e, |c, g| {
-            clear([1.0; 4], g);
-            image(&rust_logo, c.transform, g);
-        });
+    for tile in style.chunks.tiles {
+        windows.push(show_tile(&video_subsystem, &tile));
+    }
+
+    'mainloop: loop {
+        for event in sdl_context.event_pump().unwrap().poll_iter() {
+            match event {
+                Event::Quit{..} |
+                Event::KeyDown {keycode: Option::Some(Keycode::Escape), ..} =>
+                    break 'mainloop,
+                _ => {}
+            }
+        }
     }
 }
 
-// fn show_file_type(buf: &BufReader<File>) -> BufReader<File> {
-//     let mut buffer = [0; 4];
-//
-//     // read at most five bytes
-//     let mut s = String::new();
-//
-//     let mut handle = buf.take(4);
-//     handle.read_to_string(&mut s);
-//
-//     println!("File Type: {}", s);
-//
-//     handle.into_inner()
-//     // buf.read_exact(&mut buffer);
-//     // match std::str::from_utf8(&buffer) {
-//     //     Ok(s) => {
-//     //         println!("File Type: {}", s)
-//     //
-//     //     },
-//     //     Err(e) => println!("{}", e)
-//     // }
-// }
+pub fn show_tile(video_subsystem: &sdl2::VideoSubsystem, tile: &[u8]) -> sdl2::video::Window {
+    let window = video_subsystem.window("rust-sdl2 demo: Video", 512, 512)
+      .position_centered()
+      .build()
+      .unwrap();
+
+    let mut canvas = window.into_canvas().software().build().unwrap();
+    let texture_creator = canvas.texture_creator();
+
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.clear();
+
+    let mut texture = texture_creator.create_texture_static(
+        Some(PixelFormatEnum::BGRA4444),
+        IMAGE_SIZE as u32,
+        IMAGE_SIZE as u32
+    ).unwrap();
+    texture.update(None, tile, IMAGE_SIZE);
+
+    canvas.copy(&texture, None, None).expect("Render failed");
+    canvas.present();
+
+    canvas.into_window()
+}
