@@ -157,12 +157,16 @@ fn load_tiles<T: Read + Seek>(buf_reader: &mut T) -> Vec<Vec<u8>> {
     }
     let page = page;
 
-    for id in 0..1 {
+    for id in 0..16 {
+        let y_start = (id / 4) * IMAGE_SIZE;
+        let y_end = y_start + IMAGE_SIZE;
         let mut tile = Vec::with_capacity(IMAGE_SIZE*IMAGE_SIZE);
 
-        for y in 0..IMAGE_SIZE {
-            for x in 0..IMAGE_SIZE {
-                // tile.push(page[(y + (id / 4) * 64) *4 256 + (x + (id % 4) * 64)]);
+        for y in y_start..y_end {
+            let x_start = (id % 4) * IMAGE_SIZE;
+            let x_end = x_start + IMAGE_SIZE;
+
+            for x in x_start..x_end {
                 tile.push(page[(y * PAGE_SIZE) + x]);
             }
         }
@@ -225,7 +229,7 @@ pub fn show_tile(video_subsystem: &sdl2::VideoSubsystem, tile: &[u8]) -> sdl2::v
     canvas.clear();
 
     let mut texture = texture_creator.create_texture_static(
-        Some(PixelFormatEnum::BGRA4444),
+        Some(PixelFormatEnum::RGB332),
         IMAGE_SIZE as u32,
         IMAGE_SIZE as u32
     ).unwrap();
