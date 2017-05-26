@@ -1,17 +1,9 @@
 extern crate byteorder;
-extern crate piston_window;
-// extern crate find_folder;
 extern crate sdl2;
 
-use std::env;
-use sdl2::image::{LoadTexture, INIT_PNG, INIT_JPG};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::render::Texture;
-
-use piston_window::*;
-use std::path::Path;
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, BufReader};
@@ -24,7 +16,8 @@ use std::str::FromStr;
 #[derive(Debug)]
 struct StyleFile {
     header: StyleFileHeader,
-    chunks: StyleFileChunks
+    // chunks: StyleFileChunks
+    tiles: Vec<Vec<u8>>
 }
 
 #[derive(Debug)]
@@ -36,6 +29,11 @@ struct StyleFileHeader {
 #[derive(Debug)]
 struct StyleFileChunks {
     tiles: Vec<Vec<u8>>
+}
+
+#[derive(Debug)]
+struct PaletteIndex {
+    physical_palettes: Vec<u16>
 }
 
 impl StyleFile {
@@ -50,7 +48,7 @@ impl StyleFile {
 
         StyleFile {
             header,
-            chunks
+            tiles: chunks.tiles
         }
     }
 }
@@ -86,6 +84,7 @@ enum StyleFileChunkTypes {
     CarRecyclingInfo
 }
 
+// FIXME rename to something more expressive
 struct StyleChunkParseError();
 
 impl FromStr for StyleFileChunkTypes {
@@ -200,7 +199,7 @@ fn main() {
 
     let mut windows = Vec::new();
 
-    for tile in style.chunks.tiles {
+    for tile in style.tiles {
         windows.push(show_tile(&video_subsystem, &tile));
     }
 
