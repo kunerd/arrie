@@ -11,6 +11,7 @@ const IMAGE_SIZE: usize = 64;
 
 #[derive(Debug)]
 pub struct StyleFile {
+    // FIXME remove pub
     pub header: StyleFileHeader,
     pub tiles: Vec<Vec<u8>>,
 }
@@ -29,6 +30,43 @@ impl StyleFile {
             header,
             tiles: chunks.tiles,
         }
+    }
+}
+
+enum ChunkBuilderError {
+    MissingTilesChunkError,
+}
+
+struct ChunkBuilder {
+    tiles: Option<Vec<Vec<u8>>>,
+}
+
+impl ChunkBuilder {
+    pub fn new() -> ChunkBuilder {
+        ChunkBuilder { tiles: None }
+    }
+
+    pub fn load_chunk<T: Read + Seek>(&mut self,
+                                      chunk_type: ChunkTypes,
+                                      mut buf_reader: &mut T)
+                                      -> &mut ChunkBuilder {
+        match chunk_type {
+            ChunkTypes::Tiles => self.tiles(load_tiles(buf_reader)),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn tiles(&mut self, tiles: Vec<Vec<u8>>) -> &mut ChunkBuilder {
+        self.tiles = Some(tiles);
+        self
+    }
+
+    pub fn build(self) -> Result<StyleFileChunks, ChunkBuilderError> {
+        let tiles = try!(self.tiles.ok_or(ChunkBuilderError::MissingTilesChunkError));
+
+        let chunks = StyleFileChunks { tiles };
+
+        Ok(chunks)
     }
 }
 
@@ -59,7 +97,7 @@ struct PaletteIndex {
     physical_palettes: Vec<u16>,
 }
 
-enum StyleFileChunkTypes {
+enum ChunkTypes {
     PaletteIndex,
     PhysicalPalettes,
     PaletteBase,
@@ -77,33 +115,37 @@ enum StyleFileChunkTypes {
 }
 
 // FIXME rename to something more expressive
-struct StyleChunkParseError();
+#[derive(Debug)]
+enum StyleFileParseError {
+    UnknownChunkTypeError(String),
+}
 
-impl FromStr for StyleFileChunkTypes {
-    type Err = StyleChunkParseError;
+impl FromStr for ChunkTypes {
+    type Err = StyleFileParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "PALX" => Ok(StyleFileChunkTypes::PaletteIndex),
-            "PPAL" => Ok(StyleFileChunkTypes::PhysicalPalettes),
-            "PALB" => Ok(StyleFileChunkTypes::PaletteBase),
-            "TILE" => Ok(StyleFileChunkTypes::Tiles),
-            "SPRG" => Ok(StyleFileChunkTypes::SpriteGraphics),
-            "SPRX" => Ok(StyleFileChunkTypes::SpriteIndex),
-            "SPRB" => Ok(StyleFileChunkTypes::SpritesBases),
-            "DELS" => Ok(StyleFileChunkTypes::DeltaStore),
-            "DELX" => Ok(StyleFileChunkTypes::DeltaIndex),
-            "FONB" => Ok(StyleFileChunkTypes::FontBase),
-            "CARI" => Ok(StyleFileChunkTypes::CarInfo),
-            "OBJI" => Ok(StyleFileChunkTypes::MapObjectInfo),
-            "PSXT" => Ok(StyleFileChunkTypes::PSXTiles),
-            "RECY" => Ok(StyleFileChunkTypes::CarRecyclingInfo),
-            _ => Err(StyleChunkParseError()),
+            "PALX" => Ok(ChunkTypes::PaletteIndex),
+            "PPAL" => Ok(ChunkTypes::PhysicalPalettes),
+            "PALB" => Ok(ChunkTypes::PaletteBase),
+            "TILE" => Ok(ChunkTypes::Tiles),
+            "SPRG" => Ok(ChunkTypes::SpriteGraphics),
+            "SPRX" => Ok(ChunkTypes::SpriteIndex),
+            "SPRB" => Ok(ChunkTypes::SpritesBases),
+            "DELS" => Ok(ChunkTypes::DeltaStore),
+            "DELX" => Ok(ChunkTypes::DeltaIndex),
+            "FONB" => Ok(ChunkTypes::FontBase),
+            "CARI" => Ok(ChunkTypes::CarInfo),
+            "OBJI" => Ok(ChunkTypes::MapObjectInfo),
+            "PSXT" => Ok(ChunkTypes::PSXTiles),
+            "RECY" => Ok(ChunkTypes::CarRecyclingInfo),
+            s => Err(StyleFileParseError::UnknownChunkTypeError(String::from(s))),
         }
     }
 }
 
 fn read_chunks<T: Read + Seek>(mut buf_reader: &mut T) -> Option<StyleFileChunks> {
+    let mut chunk_builder = ChunkBuilder::new();
     let mut buffer = [0; 4];
 
     loop {
@@ -111,24 +153,23 @@ fn read_chunks<T: Read + Seek>(mut buf_reader: &mut T) -> Option<StyleFileChunks
 
         let chunk_type = match String::from_utf8(buffer.to_vec()) {
             Ok(s) => s,
-            Err(_) => return None,
+            Err(_) => break,
         };
 
         let size = match buf_reader.read_u32::<NativeEndian>() {
             Ok(s) => s,
-            Err(_) => return None,
+            Err(_) => break,
         };
 
-        match StyleFileChunkTypes::from_str(&chunk_type) {
-            Ok(StyleFileChunkTypes::Tiles) => {
-                let tiles = load_tiles(&mut buf_reader);
-                return Some(StyleFileChunks { tiles });
-            }
-            Ok(_) => {}
-            Err(_) => println!("Tile parse error."),
-        }
+        let chunk_type = ChunkTypes::from_str(&chunk_type).unwrap();
+        chunk_builder.load_chunk(chunk_type, &mut buf_reader);
 
         buf_reader.seek(SeekFrom::Current(size as i64)).unwrap();
+    }
+
+    match chunk_builder.build() {
+        Ok(chunk) => Some(chunk),
+        Err(_) => None,
     }
 }
 
