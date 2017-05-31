@@ -9,6 +9,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 
 use gta2_viewer::StyleFile;
+use gta2_viewer::Tile;
 
 const PAGE_SIZE: usize = 256;
 const IMAGE_SIZE: usize = 64;
@@ -23,8 +24,8 @@ fn main() {
 
     let mut windows = Vec::new();
 
-    for tile in style.tiles.iter().take(16) {
-        windows.push(show_tile(&video_subsystem, &tile));
+    for &Tile(ref tile) in style.tiles.iter().take(16) {
+        windows.push(show_tile(&video_subsystem, tile));
     }
 
     'mainloop: loop {
