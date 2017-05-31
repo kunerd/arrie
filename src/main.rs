@@ -23,7 +23,7 @@ fn main() {
 
     let mut windows = Vec::new();
 
-    for tile in style.tiles {
+    for tile in style.tiles.iter().take(16) {
         windows.push(show_tile(&video_subsystem, &tile));
     }
 

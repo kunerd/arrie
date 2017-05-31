@@ -14,6 +14,7 @@ pub struct StyleFile {
     // FIXME remove pub
     pub header: StyleFileHeader,
     pub tiles: Vec<Vec<u8>>,
+    pub palette_index: PaletteIndex,
 }
 
 impl StyleFile {
@@ -29,30 +30,43 @@ impl StyleFile {
         StyleFile {
             header,
             tiles: chunks.tiles,
+            palette_index: chunks.palette_index,
         }
     }
 }
 
 enum ChunkBuilderError {
     MissingTilesChunkError,
+    MissingPaletteIndexChunkError,
 }
 
 struct ChunkBuilder {
     tiles: Option<Vec<Vec<u8>>>,
+    palette_index: Option<PaletteIndex>,
 }
 
 impl ChunkBuilder {
     pub fn new() -> ChunkBuilder {
-        ChunkBuilder { tiles: None }
+        ChunkBuilder {
+            tiles: None,
+            palette_index: None,
+        }
     }
 
     pub fn load_chunk<T: Read + Seek>(&mut self,
                                       chunk_type: ChunkTypes,
+                                      size: u32,
                                       mut buf_reader: &mut T)
                                       -> &mut ChunkBuilder {
+
+
         match chunk_type {
-            ChunkTypes::Tiles => self.tiles(load_tiles(buf_reader)),
-            _ => unimplemented!(),
+            ChunkTypes::Tiles => self.tiles(load_tiles(size, buf_reader)),
+            ChunkTypes::PaletteIndex => self.palette_index(load_palette_index(size, buf_reader)),
+            _ => {
+                buf_reader.seek(SeekFrom::Current(size as i64)).unwrap();
+                self
+            }
         }
     }
 
@@ -61,11 +75,20 @@ impl ChunkBuilder {
         self
     }
 
+    pub fn palette_index(&mut self, palette_index: PaletteIndex) -> &mut ChunkBuilder {
+        self.palette_index = Some(palette_index);
+        self
+    }
+
     pub fn build(self) -> Result<StyleFileChunks, ChunkBuilderError> {
         let tiles = try!(self.tiles.ok_or(ChunkBuilderError::MissingTilesChunkError));
+        let palette_index = try!(self.palette_index
+                                     .ok_or(ChunkBuilderError::MissingPaletteIndexChunkError));
 
-        let chunks = StyleFileChunks { tiles };
-
+        let chunks = StyleFileChunks {
+            tiles,
+            palette_index,
+        };
         Ok(chunks)
     }
 }
@@ -90,11 +113,17 @@ fn read_header<T: Read>(buf_reader: &mut T) -> StyleFileHeader {
 #[derive(Debug)]
 struct StyleFileChunks {
     tiles: Vec<Vec<u8>>,
+    palette_index: PaletteIndex,
 }
 
 #[derive(Debug)]
-struct PaletteIndex {
+pub struct PaletteIndex {
     physical_palettes: Vec<u16>,
+}
+
+#[derive(Debug)]
+pub struct PhysicalPalette {
+    colors: Vec<u32>,
 }
 
 enum ChunkTypes {
@@ -155,16 +184,20 @@ fn read_chunks<T: Read + Seek>(mut buf_reader: &mut T) -> Option<StyleFileChunks
             Ok(s) => s,
             Err(_) => break,
         };
+        println!("{}", chunk_type);
 
         let size = match buf_reader.read_u32::<NativeEndian>() {
             Ok(s) => s,
+            Err(_) => unimplemented!(),
+        };
+
+        // let chunk_type = ChunkTypes::from_str(&chunk_type).unwrap_or_else(|| break);
+        let chunk_type = match ChunkTypes::from_str(&chunk_type) {
+            Ok(c) => c,
             Err(_) => break,
         };
 
-        let chunk_type = ChunkTypes::from_str(&chunk_type).unwrap();
-        chunk_builder.load_chunk(chunk_type, &mut buf_reader);
-
-        buf_reader.seek(SeekFrom::Current(size as i64)).unwrap();
+        chunk_builder.load_chunk(chunk_type, size, &mut buf_reader);
     }
 
     match chunk_builder.build() {
@@ -173,14 +206,24 @@ fn read_chunks<T: Read + Seek>(mut buf_reader: &mut T) -> Option<StyleFileChunks
     }
 }
 
-fn load_tiles<T: Read + Seek>(buf_reader: &mut T) -> Vec<Vec<u8>> {
-    let mut tiles: Vec<Vec<u8>> = Vec::with_capacity(16); // one page
+fn load_tiles<T: Read + Seek>(size: u32, buf_reader: &mut T) -> Vec<Vec<u8>> {
+    let pages_count = size / (PAGE_SIZE * PAGE_SIZE) as u32;
+    let mut tiles: Vec<Vec<u8>> = Vec::with_capacity(pages_count as usize * 16); // one page
 
-    // load page
+    for _ in 0..pages_count {
+        load_tiles_from_page(&mut tiles, buf_reader);
+    }
+
+    tiles
+}
+
+fn load_tiles_from_page<T: Read + Seek>(tiles: &mut Vec<Vec<u8>>, buf_reader: &mut T) {
     let mut page: [u8; PAGE_SIZE * PAGE_SIZE] = [0; PAGE_SIZE * PAGE_SIZE];
+
     for pixel in page.iter_mut() {
         *pixel = buf_reader.read_u8().unwrap();
     }
+
     let page = page;
 
     for id in 0..16 {
@@ -198,6 +241,17 @@ fn load_tiles<T: Read + Seek>(buf_reader: &mut T) -> Vec<Vec<u8>> {
         }
         tiles.push(tile);
     }
+}
 
-    tiles
+fn load_palette_index<T: Read + Seek>(size: u32, buf_reader: &mut T) -> PaletteIndex {
+    let size = (size / 2) as usize;
+    println!("{}", size);
+
+    let mut physical_palettes = Vec::with_capacity(size);
+
+    for index in 0..size {
+        physical_palettes.push(buf_reader.read_u16::<NativeEndian>().unwrap());
+    }
+
+    PaletteIndex { physical_palettes }
 }
