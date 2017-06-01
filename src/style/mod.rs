@@ -1,6 +1,5 @@
 mod tile;
 
-use std::fmt;
 use std::fs::File;
 use std::str::FromStr;
 use std::io::{Read, Seek, SeekFrom, BufReader};
@@ -11,13 +10,13 @@ pub use self::tile::Tile;
 
 // FIXME make configurable or associated constants?
 const PAGE_SIZE: usize = 256;
-const IMAGE_SIZE: usize = 64;
 
 #[derive(Debug)]
 pub struct StyleFile {
     // FIXME remove pub
     pub header: StyleFileHeader,
     pub tiles: Vec<Tile>,
+    // TODO maybe use a HashMap for palette index and physical palettes
     pub palette_index: PaletteIndex,
 }
 
@@ -37,6 +36,23 @@ impl StyleFile {
             palette_index: chunks.palette_index,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct StyleFileHeader {
+    file_type: String,
+    version: u16,
+}
+
+fn read_header<T: Read>(buf_reader: &mut T) -> StyleFileHeader {
+    let mut buffer = [0; 4];
+
+    buf_reader.read_exact(&mut buffer);
+    let file_type = String::from_utf8(buffer.to_vec()).unwrap();
+
+    let version = buf_reader.read_u16::<NativeEndian>().unwrap();
+
+    StyleFileHeader { file_type, version }
 }
 
 enum ChunkBuilderError {
@@ -95,23 +111,6 @@ impl ChunkBuilder {
         };
         Ok(chunks)
     }
-}
-
-#[derive(Debug)]
-pub struct StyleFileHeader {
-    file_type: String,
-    version: u16,
-}
-
-fn read_header<T: Read>(buf_reader: &mut T) -> StyleFileHeader {
-    let mut buffer = [0; 4];
-
-    buf_reader.read_exact(&mut buffer);
-    let file_type = String::from_utf8(buffer.to_vec()).unwrap();
-
-    let version = buf_reader.read_u16::<NativeEndian>().unwrap();
-
-    StyleFileHeader { file_type, version }
 }
 
 #[derive(Debug)]
@@ -231,8 +230,8 @@ fn load_tiles_from_page<T: Read + Seek>(tiles: &mut Vec<Tile>, buf_reader: &mut 
 }
 
 fn load_page<T: Read + Seek>(buf_reader: &mut T) -> Vec<u8> {
-    // let mut page: [u8; PAGE_SIZE * PAGE_SIZE] = [0; PAGE_SIZE * PAGE_SIZE];
     let mut page = vec![0; PAGE_SIZE * PAGE_SIZE];
+
     for pixel in page.iter_mut() {
         *pixel = buf_reader.read_u8().unwrap();
     }
@@ -246,7 +245,7 @@ fn load_palette_index<T: Read + Seek>(size: u32, buf_reader: &mut T) -> PaletteI
 
     let mut physical_palettes = Vec::with_capacity(size);
 
-    for index in 0..size {
+    for _ in 0..size {
         physical_palettes.push(buf_reader.read_u16::<NativeEndian>().unwrap());
     }
 

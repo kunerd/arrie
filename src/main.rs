@@ -11,7 +11,6 @@ use sdl2::pixels::{Color, PixelFormatEnum};
 use gta2_viewer::StyleFile;
 use gta2_viewer::Tile;
 
-const PAGE_SIZE: usize = 256;
 const IMAGE_SIZE: usize = 64;
 
 fn main() {
