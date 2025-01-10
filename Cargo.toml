@@ -5,7 +5,9 @@ authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
 
 [dependencies]
 byteorder = "1"
+ndarray = "0.16"
 
 [dependencies.sdl2]
-git = "https://github.com/AngryLawyer/rust-sdl2"
+version = "0.33"
+default-features = false
 features = ["image"]
