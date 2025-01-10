@@ -8,6 +8,10 @@ byteorder = "1"
 ndarray = "0.16"
 
 [dependencies.sdl2]
+<<<<<<< HEAD
 version = "0.33"
+=======
+version = "0.37"
+>>>>>>> 2346cc8 (Add color lookup from palletes)
 default-features = false
 features = ["image"]
