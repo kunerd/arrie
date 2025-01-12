@@ -2,8 +2,10 @@
 name = "gta2_viewer"
 version = "0.1.0"
 authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
+edition = "2021"
 
 [dependencies]
+bevy = "0.15.1"
 byteorder = "1"
 ndarray = "0.16"
 
