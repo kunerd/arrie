@@ -5,22 +5,90 @@ extern crate gta2_viewer;
 use std::fs::File;
 use std::time::Duration;
 
-use bevy::app::App;
+use bevy::app::{App, Startup};
+use bevy::asset::{AssetServer, Assets, RenderAssetUsages};
+use bevy::image::Image;
+use bevy::math::Vec2;
+use bevy::prelude::{Camera2d, Camera2dBundle, Commands, Res, ResMut};
+use bevy::sprite::{Sprite, SpriteBundle};
+use bevy::DefaultPlugins;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, Palette, PixelFormatEnum};
 
 use gta2_viewer::StyleFile;
 use sdl2::surface::Surface;
+use wgpu::{TextureDimension, TextureFormat};
 
-const IMAGE_SIZE: usize = 64;
-
+const IMAGE_SIZE: u32 = 64;
 const DATA_PATH: &str = "data/bil.sty";
 
+pub struct TilesIter<I> {
+    iter: I,
+}
+
+impl<I> TilesIter<I> {
+    pub fn new(iter: I) -> Self {
+        TilesIter { iter }
+    }
+}
+
+impl<I: Iterator<Item=String>> Iterator for TilesIter<I> {
+    type Item = String;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+fn setup_tiles(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let file = File::open(DATA_PATH).unwrap();
+    let style = StyleFile::from_file(&file);
+
+    let index = 50;
+
+    let tile = style.tiles.get(index).unwrap();
+
+    let palette_index = style.palette_index.physical_index.get(index).unwrap();
+    let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
+
+    let colored_image: Vec<u8> = tile
+        .0
+        .iter()
+        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
+        .flat_map(|c| c.to_be_bytes())
+        .collect();
+
+    let size = wgpu::Extent3d {
+        width: IMAGE_SIZE,
+        height: IMAGE_SIZE,
+        depth_or_array_layers: 1,
+    };
+
+    let image = images.add(Image::new(
+        size,
+        TextureDimension::D2,
+        colored_image,
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ));
+
+    commands.spawn(Camera2d);
+
+    let sprite = Sprite {
+        image,
+        custom_size: Some(Vec2::new(256.0, 256.0)),
+        ..Default::default()
+    };
+
+    commands.spawn(sprite);
+}
+
 fn main() {
-    App::new().run();
-    //let file = File::open(DATA_PATH).unwrap();
-    //let mut style = StyleFile::from_file(&file);
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_systems(Startup, setup_tiles)
+        .run();
 
     //let sdl_context = sdl2::init().unwrap();
     //let video_subsystem = sdl_context.video().unwrap();

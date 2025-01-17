@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.15.1"
+wgpu = { version = "23.0.1", default-features = false }
 byteorder = "1"
 ndarray = "0.16"
 

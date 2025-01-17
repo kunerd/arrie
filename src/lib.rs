@@ -2,5 +2,4 @@ extern crate byteorder;
 
 mod style;
 
-pub use style::StyleFile;
-pub use style::Tile;
+pub use style::{StyleFile, Tile};
