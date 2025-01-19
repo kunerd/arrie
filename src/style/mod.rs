@@ -22,8 +22,8 @@ const PAGE_SIZE: usize = 256;
 
 #[derive(Debug)]
 pub struct StyleFileHeader {
-    file_type: String,
-    version: u16,
+    pub file_type: String,
+    pub version: u16,
 }
 
 #[derive(Debug)]
@@ -437,6 +437,9 @@ fn load_phys_palette_from_page(id: usize, page: &[u8]) -> PhysicalPalette {
 }
 
 fn load_palette_base<T: Read + Seek>(size: u32, buf_reader: &mut T) -> PaletteBase {
+    const PALETTE_BASE_SIZE: u32 = 16;
+    assert!(size == PALETTE_BASE_SIZE);
+
     PaletteBase {
         tile: buf_reader.read_u16::<NativeEndian>().unwrap(),
         sprite: buf_reader.read_u16::<NativeEndian>().unwrap(),

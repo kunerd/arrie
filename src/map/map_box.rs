@@ -3,6 +3,53 @@ use bevy::{
 };
 use wgpu::PrimitiveTopology;
 
+//pub fn spawn_box() {
+//    let front = commands.spawn((
+//        Front,
+//        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front))),
+//        MeshMaterial3d(materials.add(StandardMaterial {
+//            base_color_texture: Some(image.clone()),
+//            ..default()
+//        })),
+//    ));
+//
+//    let back = commands.spawn((
+//        Back,
+//        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Back))),
+//        MeshMaterial3d(materials.add(StandardMaterial {
+//            base_color_texture: Some(image.clone()),
+//            ..default()
+//        })),
+//    ));
+//
+//    let left = commands.spawn((
+//        Left,
+//        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left))),
+//        MeshMaterial3d(materials.add(StandardMaterial {
+//            base_color_texture: Some(image.clone()),
+//            ..default()
+//        })),
+//    ));
+//
+//    let right = commands.spawn((
+//        Right,
+//        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right))),
+//        MeshMaterial3d(materials.add(StandardMaterial {
+//            base_color_texture: Some(image.clone()),
+//            ..default()
+//        })),
+//    ));
+//
+//    let top = commands.spawn((
+//        Top,
+//        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top))),
+//        MeshMaterial3d(materials.add(StandardMaterial {
+//            base_color_texture: Some(image.clone()),
+//            ..default()
+//        })),
+//    ));
+//}
+
 struct BoxFaceBuilder {
     face: FaceType,
     half_size: Vec3,

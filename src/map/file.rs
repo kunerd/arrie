@@ -134,7 +134,10 @@ impl MapBuilder {
 }
 
 fn load_uncompressed_map<T: Read + Seek>(size: u32, buf_reader: &mut T) -> UncompressedMap {
+    const BLOCK_INFO_SIZE: u32 = 12;
+
     let blocks_count = UncompressedMap::X * UncompressedMap::Y * UncompressedMap::Z;
+    assert!(blocks_count as u32 * BLOCK_INFO_SIZE == size);
 
     let mut blocks = Vec::with_capacity(blocks_count);
     for _ in 0..blocks_count {
