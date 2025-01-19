@@ -424,12 +424,11 @@ fn load_physical_palettes<T: Read + Seek>(size: u32, buf_reader: &mut T) -> Vec<
 }
 
 fn load_phys_palette_from_page(id: usize, page: &[u8]) -> PhysicalPalette {
-    let y_start = 0;
     let y_end = PAGE_SIZE;
-    let x_start = (id % 64) * 4;
+    let x_start = id * 4;
 
     let mut colors = Vec::with_capacity(1024);
-    for y in y_start..y_end {
+    for y in 0..y_end {
         let index = (y * PAGE_SIZE) + x_start;
         let chunk: [u8; 4] = page[index..index + 4].try_into().unwrap();
         colors.push(u32::from_ne_bytes(chunk));

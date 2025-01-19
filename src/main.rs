@@ -1,63 +1,54 @@
-extern crate sdl2;
+use gta2_viewer::map;
+use gta2_viewer::StyleFile;
 
-extern crate gta2_viewer;
+use bevy::{asset::RenderAssetUsages, prelude::*, render::mesh::Indices};
+use wgpu::{PrimitiveTopology, TextureDimension, TextureFormat};
 
 use std::fs::File;
-use std::time::Duration;
-
-use bevy::app::{App, Startup};
-use bevy::asset::{AssetServer, Assets, RenderAssetUsages};
-use bevy::image::Image;
-use bevy::math::Vec2;
-use bevy::prelude::{Camera2d, Camera2dBundle, Commands, Res, ResMut};
-use bevy::sprite::{Sprite, SpriteBundle};
-use bevy::DefaultPlugins;
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::{Color, Palette, PixelFormatEnum};
-
-use gta2_viewer::StyleFile;
-use sdl2::surface::Surface;
-use wgpu::{TextureDimension, TextureFormat};
 
 const IMAGE_SIZE: u32 = 64;
+const MAP_PATH: &str = "data/bil.gmp";
 const DATA_PATH: &str = "data/bil.sty";
 
-pub struct TilesIter<I> {
-    iter: I,
-}
-
-impl<I> TilesIter<I> {
-    pub fn new(iter: I) -> Self {
-        TilesIter { iter }
-    }
-}
-
-impl<I: Iterator<Item=String>> Iterator for TilesIter<I> {
-    type Item = String;
-    
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .insert_resource(ClearColor(Color::rgb(0.3, 0.3, 0.3)))
+        .add_systems(Startup, (setup_tiles, load_map, setup))
+        .run();
 }
 
 fn setup_tiles(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let file = File::open(DATA_PATH).unwrap();
     let style = StyleFile::from_file(&file);
 
-    let index = 50;
+    let index = 716;
 
     let tile = style.tiles.get(index).unwrap();
 
     let palette_index = style.palette_index.physical_index.get(index).unwrap();
+    dbg!(palette_index);
     let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
 
     let colored_image: Vec<u8> = tile
         .0
         .iter()
         .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
-        .flat_map(|c| c.to_be_bytes())
+        .flat_map(|c| {
+            let c = c.to_ne_bytes();
+            if c == [0, 0, 0, 0] {
+                [0, 0, 0, 0]
+            } else {
+                [c[0], c[1], c[2], 255]
+            }
+        })
         .collect();
+    //BGRA
+    //0123
+    //ARGB
+    //3210
+    //ABGR
+    //RGBA
 
     let size = wgpu::Extent3d {
         width: IMAGE_SIZE,
@@ -69,11 +60,12 @@ fn setup_tiles(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         size,
         TextureDimension::D2,
         colored_image,
+        //TextureFormat::Bgra8Unorm,
         TextureFormat::Bgra8UnormSrgb,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     ));
 
-    commands.spawn(Camera2d);
+    //commands.spawn(Camera2d);
 
     let sprite = Sprite {
         image,
@@ -84,89 +76,157 @@ fn setup_tiles(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn(sprite);
 }
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup_tiles)
-        .run();
-
-    //let sdl_context = sdl2::init().unwrap();
-    //let video_subsystem = sdl_context.video().unwrap();
-    //let mut event_pump = sdl_context.event_pump().unwrap();
-
-    //let window = video_subsystem
-    //    .window("rust-sdl2 demo: Video", 1024, 1024)
-    //    .position_centered()
-    //    .build()
-    //    .unwrap();
-
-    //let mut canvas = window.into_canvas().software().build().unwrap();
-    ////canvas.set_draw_color(Color::WHITE);
-    ////canvas.fill_rect(None).unwrap();
-    //let texture_creator = canvas.texture_creator();
-
-    //let info = canvas.info();
-    //dbg!(info.texture_formats);
-
-    //let mut tile_iter = style.tiles.iter().enumerate();
-
-    //'mainloop: loop {
-    //    for event in event_pump.poll_iter() {
-    //        match event {
-    //            Event::KeyDown {
-    //                keycode: Some(Keycode::N),
-    //                ..
-    //            } => match tile_iter.next() {
-    //                Some((index, tile)) => {
-    //                    let palette_index = style.palette_index.physical_index.get(index).unwrap();
-
-    //                    let phys_palette =
-    //                        style.physical_palette.get_mut(*palette_index as usize).unwrap();
-
-    //                    let mut colored_image: Vec<u8> = tile
-    //                        .0
-    //                        .iter()
-    //                        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
-    //                        .flat_map(|c| c.to_ne_bytes())
-    //                        .collect();
-
-    //                    let mut surface = Surface::from_data(
-    //                        colored_image.as_mut_slice(),
-    //                        IMAGE_SIZE as u32,
-    //                        IMAGE_SIZE as u32,
-    //                        IMAGE_SIZE as u32 * 4,
-    //                        PixelFormatEnum::BGRA8888,
-    //                    )
-    //                    .unwrap();
-    //                    surface.set_color_key(true, Color::RGBA(0, 0, 0, 0)).unwrap();
-
-    //                    let texture = surface.as_texture(&texture_creator).unwrap();
-    //                    dbg!(texture.query());
-    //                    canvas.clear();
-    //                    canvas.copy(&texture, None, None).expect("Render failed");
-    //                    canvas.present();
-    //                }
-    //                None => break 'mainloop,
-    //            },
-    //            Event::Quit { .. }
-    //            | Event::KeyDown {
-    //                keycode: Option::Some(Keycode::Escape),
-    //                ..
-    //            } => break 'mainloop,
-    //            _ => {}
-    //        }
-    //    }
-
-    //    //canvas.present();
-    //    std::thread::sleep(Duration::from_millis(100));
-    //}
+fn load_map() {
+    map::Map::from_file(MAP_PATH);
 }
 
-fn map_color(v: &u32) -> Color {
-    let b = (v & 0xff000000) >> 24;
-    let g = (v & 0x0000ff00) >> 8;
-    let r = (v & 0x00ff0000) >> 16;
-    let a = (v & 0x000000ff) >> 0;
+fn change_colors(mut query: Query<&mut Sprite>) {
+    for mut sprite in query.iter_mut() {
+        // your color changing logic here instead:
+        sprite.color.set_alpha(0.5);
+    }
+}
 
-    Color::RGBA(r as u8, g as u8, b as u8, a as u8)
+fn setup(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let file = File::open(DATA_PATH).unwrap();
+    let style = StyleFile::from_file(&file);
+
+    let index = 50;
+
+    let tile = style.tiles.get(index).unwrap();
+
+    let palette_index = style.palette_index.physical_index.get(index).unwrap();
+    dbg!(palette_index);
+    let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
+
+    let colored_image_1: Vec<u8> = tile
+        .0
+        .iter()
+        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
+        .flat_map(|c| {
+            let c = c.to_ne_bytes();
+            if c == [0, 0, 0, 0] {
+                [0, 0, 0, 0]
+            } else {
+                [c[0], c[1], c[2], 255]
+            }
+        })
+        .collect();
+
+    let index = 1;
+
+    let tile = style.tiles.get(index).unwrap();
+
+    let palette_index = style.palette_index.physical_index.get(index).unwrap();
+    dbg!(palette_index);
+    let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
+
+    let colored_image_2: Vec<u8> = tile
+        .0
+        .iter()
+        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
+        .flat_map(|c| {
+            let c = c.to_ne_bytes();
+            if c == [0, 0, 0, 0] {
+                [0, 0, 0, 0]
+            } else {
+                [c[0], c[1], c[2], 255]
+            }
+        })
+        .collect();
+
+    let size = wgpu::Extent3d {
+        width: IMAGE_SIZE,
+        height: IMAGE_SIZE,
+        depth_or_array_layers: 1,
+    };
+
+    let image = images.add(Image::new(
+        size,
+        TextureDimension::D2,
+        colored_image_1,
+        //TextureFormat::Bgra8Unorm,
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ));
+
+    let front = commands.spawn((
+        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image.clone()),
+            ..default()
+        })),
+    ));
+
+    let back = commands.spawn((
+        Back,
+        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Back))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image.clone()),
+            ..default()
+        })),
+    ));
+
+    let left = commands.spawn((
+        Left,
+        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image.clone()),
+            ..default()
+        })),
+    ));
+
+    let right = commands.spawn((
+        Right,
+        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image.clone()),
+            ..default()
+        })),
+    ));
+
+    let top = commands.spawn((
+        Top,
+        Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image.clone()),
+            ..default()
+        })),
+    ));
+
+    commands.spawn((
+        PointLight {
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(-10.0, 8.0, 4.0),
+    ));
+    // camera
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(-3.0, 3.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+}
+
+struct TilesIter<I> {
+    iter: I,
+}
+
+impl<I> TilesIter<I> {
+    pub fn new(iter: I) -> Self {
+        TilesIter { iter }
+    }
+}
+
+impl<I: Iterator<Item = String>> Iterator for TilesIter<I> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
 }
