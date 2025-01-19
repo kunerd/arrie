@@ -1,4 +1,5 @@
-use gta2_viewer::map;
+use gta2_viewer::map::{Map, MapFileAsset};
+use gta2_viewer::map::{self, MapFileAssetLoader};
 use gta2_viewer::StyleFile;
 
 use bevy::{asset::RenderAssetUsages, prelude::*, render::mesh::Indices};
@@ -14,6 +15,8 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .insert_resource(ClearColor(Color::BLACK))
+        .init_asset::<MapFileAsset>()
+        .init_asset_loader::<MapFileAssetLoader>()
         .add_systems(Startup, (setup_tiles, load_map, setup_camera))
         .run();
 }
@@ -76,8 +79,9 @@ fn setup_tiles(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn(sprite);
 }
 
-fn load_map() {
-    map::file::Map::from_file(MAP_PATH);
+fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let asset = asset_server.load(MAP_PATH);
+    commands.spawn(Map { asset });
 }
 
 fn setup_camera(

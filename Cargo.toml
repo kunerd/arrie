@@ -5,16 +5,15 @@ authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
 edition = "2021"
 
 [dependencies]
-bevy = "0.15.1"
+bevy = "0.15.1" 
+futures-lite = "2.0.1"
+
 wgpu = { version = "23.0.1", default-features = false }
+thiserror = "2.0"
 byteorder = "1"
 ndarray = "0.16"
 
 [dependencies.sdl2]
-<<<<<<< HEAD
-version = "0.33"
-=======
 version = "0.37"
->>>>>>> 2346cc8 (Add color lookup from palletes)
 default-features = false
 features = ["image"]

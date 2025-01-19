@@ -1,10 +1,6 @@
 mod tile;
 
-<<<<<<< HEAD
-use std::convert::{TryFrom, TryInto};
-=======
 use std::convert::TryInto;
->>>>>>> 2346cc8 (Add color lookup from palletes)
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
@@ -328,34 +324,8 @@ fn load_tiles<T: Read + Seek>(size: u32, buf_reader: &mut T) -> Vec<Tile> {
 fn load_tiles_from_page<T: Read + Seek>(tiles: &mut Vec<Tile>, buf_reader: &mut T) {
     let page = load_page(buf_reader);
 
-<<<<<<< HEAD
-    for row in 0..4 {
-        let mut tile1 = Vec::with_capacity(64 * 64);
-        let mut tile2 = Vec::with_capacity(64 * 64);
-        let mut tile3 = Vec::with_capacity(64 * 64);
-        let mut tile4 = Vec::with_capacity(64 * 64);
-
-        for line in 0..64 {
-            let start = row * 64 * 256 + line * 256;
-            let end = start + 256;
-            dbg!(end);
-            let line = &page[start..end];
-            tile1.extend_from_slice(&line[0..64]);
-            tile2.extend_from_slice(&line[64..128]);
-            tile3.extend_from_slice(&line[128..192]);
-            tile4.extend_from_slice(&line[192..256]);
-        }
-
-        tiles.append(&mut vec![
-            Tile(tile1),
-            Tile(tile2),
-            Tile(tile3),
-            Tile(tile4),
-        ]);
-=======
     for id in 0..TILES_PER_PAGE {
         tiles.push(Tile::from_file(id, &page));
->>>>>>> 2346cc8 (Add color lookup from palletes)
     }
     //for row in 0..4 {
     //    let mut tile1 = Vec::with_capacity(64 * 64);

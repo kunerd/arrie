@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::Path,
     str::FromStr,
 };
@@ -47,6 +47,15 @@ impl Map {
         let _header = read_header(&mut buf_reader);
 
         read_chunks(&mut buf_reader)
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let mut cursor = Cursor::new(bytes);
+
+        let header = read_header(&mut cursor);
+        dbg!(header);
+
+        read_chunks(&mut cursor)
     }
 }
 
