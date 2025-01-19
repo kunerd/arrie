@@ -50,12 +50,12 @@ use wgpu::PrimitiveTopology;
 //    ));
 //}
 
-struct BoxFaceBuilder {
+pub struct BoxFaceBuilder {
     face: FaceType,
     half_size: Vec3,
 }
 
-enum FaceType {
+pub enum FaceType {
     Front,
     Back,
     Right,
@@ -65,7 +65,7 @@ enum FaceType {
 }
 
 impl BoxFaceBuilder {
-    fn new(length: f32, face: FaceType) -> Self {
+    pub fn new(length: f32, face: FaceType) -> Self {
         Self {
             face,
             half_size: Vec3::new(length, length, length) / 2.0,

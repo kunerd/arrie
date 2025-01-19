@@ -9,12 +9,12 @@ use byteorder::{NativeEndian, ReadBytesExt};
 
 #[derive(Debug)]
 pub struct FileHeader {
-    file_type: String,
-    version: u16,
+    pub file_type: String,
+    pub version: u16,
 }
 
 pub struct Map {
-    uncompressed_map: UncompressedMap,
+    pub uncompressed_map: UncompressedMap,
     //compressed_map_16bit: CompressedMap,
     //compressed_map_32bit: CompressedMap,
     //zones: Vec<Zone>,
@@ -25,18 +25,19 @@ pub struct Map {
     //junctions: Vec<Junction>
 }
 
-pub struct UncompressedMap(Vec<BlockInfo>);
+pub struct UncompressedMap(pub Vec<BlockInfo>);
 
+#[derive(Debug)]
 pub struct BlockInfo {
-    left: u16,
-    right: u16,
-    top: u16,
-    bottom: u16,
-    lid: u16,
+    pub left: u16,
+    pub right: u16,
+    pub top: u16,
+    pub bottom: u16,
+    pub lid: u16,
     // TODO: use bitflags
-    arrows: u8,
+    pub arrows: u8,
     // TODO: use bitflags
-    slope_type: u8,
+    pub slope_type: u8,
 }
 
 impl Map {

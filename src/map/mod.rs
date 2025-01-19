@@ -1,7 +1,7 @@
 pub mod file;
+pub mod map_box;
 
 mod loader;
-mod map_box;
 
 use bevy::{asset::Handle, prelude::Component};
 pub use loader::{MapFileAsset, MapFileAssetLoader, MapFileAssetLoaderError};
