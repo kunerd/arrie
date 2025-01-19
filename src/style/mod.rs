@@ -1,17 +1,25 @@
+pub mod loader;
 mod tile;
 
-use std::convert::TryInto;
-use std::error::Error;
-use std::fmt;
-use std::fs::File;
-use std::io;
-use std::io::{BufReader, Read, Seek, SeekFrom};
-use std::str::FromStr;
-use std::string;
+use bevy::{asset::Handle, prelude::Component};
+pub use tile::Tile;
 
 use byteorder::{NativeEndian, ReadBytesExt};
 
-pub use self::tile::Tile;
+use std::{
+    convert::TryInto,
+    error::Error,
+    fmt,
+    fs::File,
+    io::{self, BufReader, Cursor, Read, Seek, SeekFrom},
+    str::FromStr,
+    string,
+};
+
+#[derive(Component)]
+pub struct Style {
+    pub asset: Handle<loader::StyleFileAsset>
+}
 
 // FIXME make configurable or associated constants?
 const PAGE_SIZE: usize = 256;
@@ -37,6 +45,24 @@ pub struct StyleFile {
 impl StyleFile {
     pub fn from_file(file: &File) -> StyleFile {
         let mut buf_reader = BufReader::new(file);
+
+        let header = read_header(&mut buf_reader).unwrap();
+        let chunks = match read_chunks(&mut buf_reader) {
+            Some(c) => c,
+            None => panic!("Error while reading chunks."),
+        };
+
+        StyleFile {
+            header,
+            tiles: chunks.tiles,
+            palette_index: chunks.palette_index,
+            palette_base: chunks.palette_base,
+            physical_palette: chunks.physical_palettes,
+        }
+    }
+
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        let mut buf_reader = Cursor::new(bytes);
 
         let header = read_header(&mut buf_reader).unwrap();
         let chunks = match read_chunks(&mut buf_reader) {
