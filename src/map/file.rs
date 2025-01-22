@@ -28,12 +28,76 @@ pub struct Map {
 pub struct UncompressedMap(pub Vec<BlockInfo>);
 
 #[derive(Debug)]
+pub enum Rotate {
+    Degree0,
+    Degree90,
+    Degree180,
+    Degree270,
+}
+
+impl From<u8> for Rotate {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Degree0,
+            1 => Self::Degree90,
+            2 => Self::Degree180,
+            3 => Self::Degree270,
+            _ => panic!("Rotation not supported")
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct NormalFace {
+    pub tile_id: usize,
+    pub flip: bool,
+    pub rotate: Rotate,
+}
+
+impl From<u16> for NormalFace {
+    fn from(value: u16) -> Self {
+        let tile_id = (value & 0b0000_0011_1111_1111) as usize;
+        let flip = ((value >> 13) & 0x01)  == 1;
+        let rotate = value >> 14 & 0x02;
+        let rotate = Rotate::from(rotate as u8); 
+
+        Self {
+            tile_id,
+            flip,
+            rotate
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct LidFace {
+    pub tile_id: usize,
+    pub flip: bool,
+    pub rotate: Rotate,
+}
+
+impl From<u16> for LidFace {
+    fn from(value: u16) -> Self {
+        let tile_id = (value & 0b0000_0011_1111_1111) as usize;
+        let flip = ((value >> 13) & 0x01)  == 1;
+        let rotate = value >> 14 & 0x02;
+        let rotate = Rotate::from(rotate as u8); 
+
+        Self {
+            tile_id,
+            flip,
+            rotate
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct BlockInfo {
-    pub left: u16,
-    pub right: u16,
-    pub top: u16,
-    pub bottom: u16,
-    pub lid: u16,
+    pub left: NormalFace,
+    pub right: NormalFace,
+    pub top: NormalFace,
+    pub bottom: NormalFace,
+    pub lid: LidFace,
     // TODO: use bitflags
     pub arrows: u8,
     // TODO: use bitflags
@@ -152,11 +216,11 @@ fn load_uncompressed_map<T: Read + Seek>(size: u32, buf_reader: &mut T) -> Uncom
     let mut blocks = Vec::with_capacity(blocks_count);
     for _ in 0..blocks_count {
         let block = BlockInfo {
-            left: buf_reader.read_u16::<NativeEndian>().unwrap(),
-            right: buf_reader.read_u16::<NativeEndian>().unwrap(),
-            top: buf_reader.read_u16::<NativeEndian>().unwrap(),
-            bottom: buf_reader.read_u16::<NativeEndian>().unwrap(),
-            lid: buf_reader.read_u16::<NativeEndian>().unwrap(),
+            left: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
+            right: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
+            top: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
+            bottom: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
+            lid: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
             arrows: buf_reader.read_u8().unwrap(),
             slope_type: buf_reader.read_u8().unwrap(),
         };

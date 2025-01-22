@@ -1,3 +1,4 @@
+use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use gta2_viewer::{
     loader::{StyleFileAsset, StyleFileAssetLoader},
     map::{
@@ -19,11 +20,13 @@ enum AppState {
     #[default]
     SetupTilesIndex,
     SetupMap,
+    Wait,
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(PanOrbitCameraPlugin)
         .insert_state(AppState::SetupTilesIndex)
         .insert_resource(ClearColor(Color::BLACK))
         .init_asset::<MapFileAsset>()
@@ -39,8 +42,11 @@ fn main() {
             setup_assets.run_if(in_state(AppState::SetupTilesIndex)),
         )
         .add_systems(Update, setup_map.run_if(in_state(AppState::SetupMap)))
+        .add_systems(Update, nop.run_if(in_state(AppState::Wait)))
         .run();
 }
+
+fn nop() {}
 
 fn load_style_file(mut commands: Commands, asset_server: Res<AssetServer>) {
     let asset = asset_server.load(STYLE_PATH);
@@ -125,15 +131,11 @@ fn setup_map(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    //mut next_state: ResMut<NextState<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
     let Some(map_file) = maps.get(&map.asset.clone()) else {
         return;
     };
-
-    fn is_valid_tile(id: u16) -> bool {
-        id > 0 && id < 992
-    }
 
     let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
 
@@ -145,69 +147,86 @@ fn setup_map(
     let top = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top));
     //let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
 
-    let voxel = map_file
-        .0
-        .uncompressed_map
-        .0
-        .iter()
-        .find(|i| is_valid_tile(i.lid) && is_valid_tile(i.left) && is_valid_tile(i.top))
-        .unwrap();
+    const X_MAX: usize = 256;
+    const Y_MAX: usize = 256;
 
-    // let lid_image = create_image_asset(first_cube.lid as usize, &style_file.0, &mut images);
-    let _front = commands.spawn((
-        Mesh3d(front.clone()),
-        MeshMaterial3d(
-            map_materials
-                .index
-                .get(&(voxel.lid as usize))
-                .cloned()
-                .unwrap_or(unknown_tile_color.clone())
-        ),
-    ));
+    for (i, voxel) in map_file.0.uncompressed_map.0.iter().enumerate() {
+        //const Z_MAX: usize = 8;
 
-    let _back = commands.spawn((
-        Mesh3d(back.clone()),
-        MeshMaterial3d(
-            map_materials
-                .index
-                .get(&(voxel.lid as usize))
-                .cloned()
-                .unwrap_or(unknown_tile_color.clone())
-        ),
-    ));
+        let x = i % X_MAX;
+        let y = (i / X_MAX) % Y_MAX;
+        let z = i / (X_MAX * Y_MAX);
 
-    let _left = commands.spawn((
-        Mesh3d(left.clone()),
-        MeshMaterial3d(
-            map_materials
-                .index
-                .get(&(voxel.left as usize))
-                .cloned()
-                .unwrap_or(unknown_tile_color.clone())
-        ),
-    ));
+        if voxel.lid.tile_id != 0 {
+            let _front = commands.spawn((
+                Mesh3d(front.clone()),
+                MeshMaterial3d(
+                    map_materials
+                        .index
+                        .get(&(voxel.lid.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color.clone()),
+                ),
+                Transform::from_xyz(x as f32, y as f32, z as f32),
+            ));
 
-    let _right = commands.spawn((
-        Mesh3d(right.clone()),
-        MeshMaterial3d(
-            map_materials
-                .index
-                .get(&(voxel.right as usize))
-                .cloned()
-                .unwrap_or(unknown_tile_color.clone())
-        ),
-    ));
+            let _back = commands.spawn((
+                Mesh3d(back.clone()),
+                MeshMaterial3d(
+                    map_materials
+                        .index
+                        .get(&(voxel.lid.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color.clone()),
+                ),
+                Transform::from_xyz(x as f32, y as f32, z as f32),
+            ));
+        }
 
-    let _top = commands.spawn((
-        Mesh3d(top.clone()),
-        MeshMaterial3d(
-            map_materials
-                .index
-                .get(&(voxel.top as usize))
-                .cloned()
-                .unwrap_or(unknown_tile_color.clone())
-        ),
-    ));
+        if voxel.left.tile_id != 0 {
+            let _left = commands.spawn((
+                Mesh3d(left.clone()),
+                MeshMaterial3d(
+                    map_materials
+                        .index
+                        .get(&(voxel.left.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color.clone()),
+                ),
+                Transform::from_xyz(x as f32, y as f32, z as f32),
+            ));
+        }
+
+        if voxel.right.tile_id != 0 {
+            let _right = commands.spawn((
+                Mesh3d(right.clone()),
+                MeshMaterial3d(
+                    map_materials
+                        .index
+                        .get(&(voxel.right.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color.clone()),
+                ),
+                Transform::from_xyz(x as f32, y as f32, z as f32),
+            ));
+        }
+
+        if voxel.top.tile_id != 0 {
+            let _top = commands.spawn((
+                Mesh3d(top.clone()),
+                MeshMaterial3d(
+                    map_materials
+                        .index
+                        .get(&(voxel.top.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color.clone()),
+                ),
+                Transform::from_xyz(x as f32, y as f32, z as f32),
+            ));
+        }
+    }
+
+    next_state.set(AppState::Wait)
 }
 
 fn setup_camera_and_light(mut commands: Commands) {
@@ -216,18 +235,35 @@ fn setup_camera_and_light(mut commands: Commands) {
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(-10.0, 8.0, 4.0),
+        Transform::from_xyz(0.0, 0.0, 30.0),
     ));
 
     commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-3.0, 3.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y),
+        PanOrbitCamera::default(),
+        Transform::from_xyz(128., 128., 25.0).looking_at(
+            Vec3 {
+                x: 128.0,
+                y: 156.0,
+                z: 0.0,
+            },
+            Vec3::Y,
+        ),
     ));
+    //commands.spawn((
+    //    Camera3d::default(),
+    //    Transform::from_xyz(128., 128., 25.0).looking_at(
+    //        Vec3 {
+    //            x: 128.0,
+    //            y: 156.0,
+    //            z: 0.0,
+    //        },
+    //        Vec3::Z,
+    //    ),
+    //));
 }
 
-//#[derive(Debug, Component)]
-//struct Voxel {
-//}
+#[derive(Debug, Component)]
+struct Voxel {}
 
 //fn create_image_asset(
 //    index: usize,
