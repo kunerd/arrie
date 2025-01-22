@@ -1,7 +1,6 @@
 pub mod loader;
 mod tile;
 
-use bevy::{asset::Handle, prelude::Component};
 pub use tile::Tile;
 
 use byteorder::{NativeEndian, ReadBytesExt};
@@ -15,11 +14,6 @@ use std::{
     str::FromStr,
     string,
 };
-
-#[derive(Component)]
-pub struct Style {
-    pub asset: Handle<loader::StyleFileAsset>
-}
 
 // FIXME make configurable or associated constants?
 const PAGE_SIZE: usize = 256;

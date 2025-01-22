@@ -4,119 +4,210 @@ use gta2_viewer::{
         map_box::{BoxFaceBuilder, FaceType},
         Map, MapFileAsset, MapFileAssetLoader,
     },
-    Style, StyleFile,
+    MapMaterialIndex, Style,
 };
 
-use bevy::{
-    asset::{LoadState, RenderAssetUsages},
-    prelude::*,
-};
+use bevy::{asset::RenderAssetUsages, prelude::*};
 use wgpu::{TextureDimension, TextureFormat};
 
 const IMAGE_SIZE: u32 = 64;
 const MAP_PATH: &str = "data/bil.gmp";
 const STYLE_PATH: &str = "data/bil.sty";
 
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+enum AppState {
+    #[default]
+    SetupTilesIndex,
+    SetupMap,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .insert_state(AppState::SetupTilesIndex)
         .insert_resource(ClearColor(Color::BLACK))
         .init_asset::<MapFileAsset>()
         .init_asset_loader::<MapFileAssetLoader>()
         .init_asset::<StyleFileAsset>()
         .init_asset_loader::<StyleFileAssetLoader>()
-        .add_systems(Startup, (setup_tiles, setup_map, setup_camera_and_light))
-        .add_systems(Update, on_map_and_style_loaded)
+        .add_systems(
+            Startup,
+            (load_style_file, load_map_file, setup_camera_and_light),
+        )
+        .add_systems(
+            Update,
+            setup_assets.run_if(in_state(AppState::SetupTilesIndex)),
+        )
+        .add_systems(Update, setup_map.run_if(in_state(AppState::SetupMap)))
         .run();
 }
 
-fn setup_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_style_file(mut commands: Commands, asset_server: Res<AssetServer>) {
     let asset = asset_server.load(STYLE_PATH);
-    commands.spawn(Style { asset });
+    commands.insert_resource(Style { asset });
 }
 
-fn setup_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_map_file(mut commands: Commands, asset_server: Res<AssetServer>) {
     let asset = asset_server.load(MAP_PATH);
-    commands.spawn(Map { asset });
+    commands.insert_resource(Map { asset });
 }
 
-fn on_map_and_style_loaded(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    map: Query<&Map>,
-    style: Query<&Style>,
-    maps: Res<Assets<MapFileAsset>>,
+fn setup_assets(
+    style: Res<Style>,
     styles: Res<Assets<StyleFileAsset>>,
+    mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    let Some(style_file) = styles.get(&style.asset.clone()) else {
+        return;
+    };
+
+    let mut map_materials = MapMaterialIndex::default();
+
+    let style_file = &style_file.0;
+
+    for (id, tile) in style_file.tiles.iter().enumerate() {
+        let palette_index = style_file.palette_index.physical_index.get(id).unwrap();
+        let phys_palette = style_file
+            .physical_palette
+            .get(*palette_index as usize)
+            .unwrap();
+
+        let tile = tile
+            .0
+            .iter()
+            .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
+            .flat_map(|c| {
+                let c = c.to_ne_bytes();
+                if c == [0, 0, 0, 0] {
+                    [0, 0, 0, 0]
+                } else {
+                    [c[0], c[1], c[2], 255]
+                }
+            })
+            .collect();
+
+        let size = wgpu::Extent3d {
+            width: IMAGE_SIZE,
+            height: IMAGE_SIZE,
+            depth_or_array_layers: 1,
+        };
+
+        let image_handle = images.add(Image::new(
+            size,
+            TextureDimension::D2,
+            tile,
+            TextureFormat::Bgra8UnormSrgb,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        ));
+
+        let material_handler = materials.add(StandardMaterial {
+            base_color_texture: Some(image_handle.clone()),
+            ..default()
+        });
+
+        map_materials.index.insert(id, material_handler);
+    }
+
+    commands.insert_resource(map_materials);
+    next_state.set(AppState::SetupMap);
+}
+
+fn setup_map(
+    map: Res<Map>,
+    map_materials: Res<MapMaterialIndex>,
+    maps: Res<Assets<MapFileAsset>>,
+    //styles: Res<Assets<StyleFileAsset>>,
+    //asset_server: Res<AssetServer>,
+    //mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+    //mut next_state: ResMut<NextState<AppState>>,
 ) {
-    for (map, style) in map.iter().zip(style.iter()) {
-        let map_state = asset_server.get_load_state(&map.asset);
-        let style_state = asset_server.get_load_state(&style.asset);
+    let Some(map_file) = maps.get(&map.asset.clone()) else {
+        return;
+    };
 
-        if let (Some(LoadState::Loaded), Some(LoadState::Loaded)) = (map_state, style_state) {
-            let map = maps.get(&map.asset.clone()).unwrap();
-            let style = styles.get(&style.asset.clone()).unwrap();
-
-            fn is_valid_tile(id: u16) -> bool {
-                id > 0 && id < 992
-            };
-
-            let first_cube = map
-                .0
-                .uncompressed_map
-                .0
-                .iter()
-                .find(|i| is_valid_tile(i.lid) && is_valid_tile(i.left) && is_valid_tile(i.top) )
-                .unwrap();
-            dbg!(first_cube);
-
-            let lid_image = create_image_asset(first_cube.lid as usize, &style.0, &mut images);
-            let front = commands.spawn((
-                Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(lid_image.clone()),
-                    ..default()
-                })),
-            ));
-
-            let back = commands.spawn((
-                Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Back))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(lid_image.clone()),
-                    ..default()
-                })),
-            ));
-
-            let left_image = create_image_asset(first_cube.left as usize, &style.0, &mut images);
-            let left = commands.spawn((
-                Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(left_image),
-                    ..default()
-                })),
-            ));
-
-            let right_image = create_image_asset(first_cube.right as usize, &style.0, &mut images);
-            let right = commands.spawn((
-                Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(right_image),
-                    ..default()
-                })),
-            ));
-
-            let top_image = create_image_asset(first_cube.top as usize, &style.0, &mut images);
-            let top = commands.spawn((
-                Mesh3d(meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(top_image),
-                    ..default()
-                })),
-            ));
-        }
+    fn is_valid_tile(id: u16) -> bool {
+        id > 0 && id < 992
     }
+
+    let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
+
+    // setup faces meshs
+    let front = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front));
+    let back = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Back));
+    let left = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left));
+    let right = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right));
+    let top = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top));
+    //let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
+
+    let voxel = map_file
+        .0
+        .uncompressed_map
+        .0
+        .iter()
+        .find(|i| is_valid_tile(i.lid) && is_valid_tile(i.left) && is_valid_tile(i.top))
+        .unwrap();
+
+    // let lid_image = create_image_asset(first_cube.lid as usize, &style_file.0, &mut images);
+    let _front = commands.spawn((
+        Mesh3d(front.clone()),
+        MeshMaterial3d(
+            map_materials
+                .index
+                .get(&(voxel.lid as usize))
+                .cloned()
+                .unwrap_or(unknown_tile_color.clone())
+        ),
+    ));
+
+    let _back = commands.spawn((
+        Mesh3d(back.clone()),
+        MeshMaterial3d(
+            map_materials
+                .index
+                .get(&(voxel.lid as usize))
+                .cloned()
+                .unwrap_or(unknown_tile_color.clone())
+        ),
+    ));
+
+    let _left = commands.spawn((
+        Mesh3d(left.clone()),
+        MeshMaterial3d(
+            map_materials
+                .index
+                .get(&(voxel.left as usize))
+                .cloned()
+                .unwrap_or(unknown_tile_color.clone())
+        ),
+    ));
+
+    let _right = commands.spawn((
+        Mesh3d(right.clone()),
+        MeshMaterial3d(
+            map_materials
+                .index
+                .get(&(voxel.right as usize))
+                .cloned()
+                .unwrap_or(unknown_tile_color.clone())
+        ),
+    ));
+
+    let _top = commands.spawn((
+        Mesh3d(top.clone()),
+        MeshMaterial3d(
+            map_materials
+                .index
+                .get(&(voxel.top as usize))
+                .cloned()
+                .unwrap_or(unknown_tile_color.clone())
+        ),
+    ));
 }
 
 fn setup_camera_and_light(mut commands: Commands) {
@@ -134,43 +225,45 @@ fn setup_camera_and_light(mut commands: Commands) {
     ));
 }
 
-fn create_image_asset(
-    index: usize,
-    style: &StyleFile,
-    images: &mut ResMut<Assets<Image>>,
-) -> Handle<Image> {
-    let index = if index > 922 { 50 } else { index };
+//#[derive(Debug, Component)]
+//struct Voxel {
+//}
 
-    let palette_index = style.palette_index.physical_index.get(index).unwrap();
-
-    let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
-
-    let tile = style.tiles.get(index).unwrap();
-    let tile = tile
-        .0
-        .iter()
-        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
-        .flat_map(|c| {
-            let c = c.to_ne_bytes();
-            if c == [0, 0, 0, 0] {
-                [0, 0, 0, 0]
-            } else {
-                [c[0], c[1], c[2], 255]
-            }
-        })
-        .collect();
-
-    let size = wgpu::Extent3d {
-        width: IMAGE_SIZE,
-        height: IMAGE_SIZE,
-        depth_or_array_layers: 1,
-    };
-
-    images.add(Image::new(
-        size,
-        TextureDimension::D2,
-        tile,
-        TextureFormat::Bgra8UnormSrgb,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    ))
-}
+//fn create_image_asset(
+//    index: usize,
+//    style: &StyleFile,
+//    images: &mut ResMut<Assets<Image>>,
+//) -> Handle<Image> {
+//    let index = if index > 922 { 50 } else { index };
+//
+//    let palette_index = style.palette_index.physical_index.get(index).unwrap();
+//    let phys_palette = style.physical_palette.get(*palette_index as usize).unwrap();
+//    let tile = style.tiles.get(index).unwrap();
+//    let tile = tile
+//        .0
+//        .iter()
+//        .map(|p| *phys_palette.colors.get(*p as usize).unwrap())
+//        .flat_map(|c| {
+//            let c = c.to_ne_bytes();
+//            if c == [0, 0, 0, 0] {
+//                [0, 0, 0, 0]
+//            } else {
+//                [c[0], c[1], c[2], 255]
+//            }
+//        })
+//        .collect();
+//
+//    let size = wgpu::Extent3d {
+//        width: IMAGE_SIZE,
+//        height: IMAGE_SIZE,
+//        depth_or_array_layers: 1,
+//    };
+//
+//    images.add(Image::new(
+//        size,
+//        TextureDimension::D2,
+//        tile,
+//        TextureFormat::Bgra8UnormSrgb,
+//        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+//    ))
+//}
