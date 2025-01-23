@@ -57,8 +57,8 @@ pub struct NormalFace {
 impl From<u16> for NormalFace {
     fn from(value: u16) -> Self {
         let tile_id = (value & 0b0000_0011_1111_1111) as usize;
-        let flip = ((value >> 13) & 0x01)  == 1;
-        let rotate = value >> 14 & 0x02;
+        let flip = ((value >> 13) & 0x01) == 1;
+        let rotate = value >> 14;
         let rotate = Rotate::from(rotate as u8); 
 
         Self {
@@ -80,7 +80,7 @@ impl From<u16> for LidFace {
     fn from(value: u16) -> Self {
         let tile_id = (value & 0b0000_0011_1111_1111) as usize;
         let flip = ((value >> 13) & 0x01)  == 1;
-        let rotate = value >> 14 & 0x02;
+        let rotate = value >> 14;
         let rotate = Rotate::from(rotate as u8); 
 
         Self {
