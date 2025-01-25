@@ -1,4 +1,4 @@
-use std::f32::consts::TAU;
+use std::f32::consts::{PI, TAU};
 
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use gta2_viewer::{
@@ -11,7 +11,15 @@ use gta2_viewer::{
     MapMaterialIndex, Style,
 };
 
-use bevy::{asset::RenderAssetUsages, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    color::palettes::{
+        css::GOLD,
+        tailwind::{PINK_100, RED_500},
+    },
+    picking::pointer::PointerInteraction,
+    prelude::*,
+};
 use wgpu::{TextureDimension, TextureFormat};
 
 const IMAGE_SIZE: u32 = 64;
@@ -30,6 +38,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(PanOrbitCameraPlugin)
+        .add_plugins(MeshPickingPlugin)
         .insert_state(AppState::SetupTilesIndex)
         .insert_resource(ClearColor(Color::BLACK))
         .init_asset::<MapFileAsset>()
@@ -38,18 +47,30 @@ fn main() {
         .init_asset_loader::<StyleFileAssetLoader>()
         .add_systems(
             Startup,
-            (load_style_file, load_map_file, setup_camera_and_light),
+            (
+                load_style_file,
+                load_map_file,
+                setup_camera_and_light,
+                spawn_face_debug_text,
+            ),
         )
         .add_systems(
             Update,
             setup_assets.run_if(in_state(AppState::SetupTilesIndex)),
         )
         .add_systems(Update, setup_map.run_if(in_state(AppState::SetupMap)))
-        .add_systems(Update, nop.run_if(in_state(AppState::Wait)))
+        .add_systems(
+            Update,
+            draw_mesh_intersections.run_if(in_state(AppState::Wait)),
+        )
         .run();
 }
 
-fn nop() {}
+#[derive(Component, Debug)]
+struct MapPos(usize);
+
+#[derive(Component)]
+struct FaceDebugText;
 
 fn load_style_file(mut commands: Commands, asset_server: Res<AssetServer>) {
     let asset = asset_server.load(STYLE_PATH);
@@ -128,9 +149,6 @@ fn setup_map(
     map: Res<Map>,
     map_materials: Res<MapMaterialIndex>,
     maps: Res<Assets<MapFileAsset>>,
-    //styles: Res<Assets<StyleFileAsset>>,
-    //asset_server: Res<AssetServer>,
-    //mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -155,12 +173,11 @@ fn setup_map(
 
     const X_MAX: usize = 256;
     const Y_MAX: usize = 256;
+    const Z_MAX: usize = 8;
 
     for (i, voxel) in map_file.0.uncompressed_map.0.iter().enumerate() {
-        //const Z_MAX: usize = 8;
-
         let x = i % X_MAX;
-        let y = (i / X_MAX) % Y_MAX;
+        let y = Y_MAX - (i / X_MAX) % Y_MAX;
         let z = i / (X_MAX * Y_MAX);
 
         let pos = Vec3 {
@@ -171,29 +188,45 @@ fn setup_map(
 
         if voxel.lid.tile_id != 0 {
             let angle = match voxel.lid.rotate {
-                gta2_viewer::map::file::Rotate::Degree0 => 0.0,
+                gta2_viewer::map::file::Rotate::Degree0 => {
+                    if voxel.lid.flip {
+                        TAU * 0.5
+                    } else {
+                        0.0
+                    }
+                },
                 gta2_viewer::map::file::Rotate::Degree90 => TAU * 0.25,
-                gta2_viewer::map::file::Rotate::Degree180 => TAU * 0.5,
+                gta2_viewer::map::file::Rotate::Degree180 => {
+                    if voxel.lid.flip {
+                        TAU
+                    } else {
+                        TAU * 0.5
+                    }
+                }
                 gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
             };
 
             let mesh = if voxel.lid.flip {
                 front_fliped.clone()
+                //front.clone()
             } else {
                 front.clone()
             };
 
-            let _front = commands.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(
-                    map_materials
-                        .index
-                        .get(&(voxel.lid.tile_id))
-                        .cloned()
-                        .unwrap_or(unknown_tile_color.clone()),
-                ),
-                Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(angle)),
-            ));
+            let _front = commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(
+                        map_materials
+                            .index
+                            .get(&(voxel.lid.tile_id))
+                            .cloned()
+                            .unwrap_or(unknown_tile_color.clone()),
+                    ),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(-angle)),
+                    MapPos(i),
+                ))
+                .observe(on_click_show_debug);
 
             //let _back = commands.spawn((
             //    Mesh3d(back.clone()),
@@ -220,6 +253,7 @@ fn setup_map(
             &map_materials,
             unknown_tile_color.clone(),
             pos,
+            i,
         );
 
         let right = if voxel.right.flip {
@@ -234,6 +268,7 @@ fn setup_map(
             &map_materials,
             unknown_tile_color.clone(),
             pos,
+            i,
         );
 
         spawn_face(
@@ -243,6 +278,7 @@ fn setup_map(
             &map_materials,
             unknown_tile_color.clone(),
             pos,
+            i,
         );
     }
 
@@ -281,6 +317,7 @@ fn spawn_face(
     materials: &MapMaterialIndex,
     unknown_tile_color: Handle<StandardMaterial>,
     pos: Vec3,
+    map_index: usize,
 ) {
     if face.tile_id != 0 {
         let angle = match face.rotate {
@@ -290,19 +327,79 @@ fn spawn_face(
             gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
         };
 
-        commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(
-                materials
-                    .index
-                    .get(&(face.tile_id))
-                    .cloned()
-                    .unwrap_or(unknown_tile_color),
-            ),
-            Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(angle)),
-        ));
+        commands
+            .spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(
+                    materials
+                        .index
+                        .get(&(face.tile_id))
+                        .cloned()
+                        .unwrap_or(unknown_tile_color),
+                ),
+                Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(angle)),
+                MapPos(map_index),
+            ))
+            .observe(on_click_show_debug);
     }
 }
+
+fn spawn_face_debug_text(mut commands: Commands) {
+    commands
+        .spawn((
+            Text::new("Block info"),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+        ))
+        .with_child((
+            TextSpan::default(),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(GOLD.into()),
+            FaceDebugText,
+        ));
+}
+
+/// A system that draws hit indicators for every pointer.
+fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.05, RED_500);
+        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
+    }
+}
+
+fn on_click_show_debug(
+    click: Trigger<Pointer<Click>>,
+    map: Res<Map>,
+    maps: Res<Assets<MapFileAsset>>,
+    positions: Query<&MapPos>,
+    mut query: Query<&mut TextSpan, With<FaceDebugText>>,
+) {
+    let Ok(pos) = positions.get(click.entity()) else {
+        return;
+    };
+
+    let Some(map_file) = maps.get(&map.asset.clone()) else {
+        return;
+    };
+
+    let Some(map_info) = map_file.0.uncompressed_map.0.get(pos.0) else {
+        return;
+    };
+
+    for mut span in &mut query {
+        **span = format!("map_pos: {}\n{:#?}", pos.0, map_info);
+    }
+}
+
 //fn create_image_asset(
 //    index: usize,
 //    style: &StyleFile,

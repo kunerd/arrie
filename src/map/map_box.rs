@@ -45,10 +45,10 @@ impl MeshBuilder for BoxFaceBuilder {
         // Suppose Y-up right hand, and camera look from +Z to -Z
         let vertices = match self.face {
             FaceType::Front => &[
-                ([min.x, min.y, max.z], [0.0, 0.0, 1.0], [0.0, 0.0]),//[0.0, 0.0]
-                ([max.x, min.y, max.z], [0.0, 0.0, 1.0], [1.0, 0.0]),//[1.0, 0.0]
-                ([max.x, max.y, max.z], [0.0, 0.0, 1.0], [1.0, 1.0]),//[1.0, 1.0]
-                ([min.x, max.y, max.z], [0.0, 0.0, 1.0], [0.0, 1.0]),//[0.0, 1.0]
+                ([min.x, min.y, max.z], [0.0, 0.0, 1.0], [0.0, 1.0]), //[0.0, 0.0]
+                ([max.x, min.y, max.z], [0.0, 0.0, 1.0], [1.0, 1.0]), //[1.0, 0.0]
+                ([max.x, max.y, max.z], [0.0, 0.0, 1.0], [1.0, 0.0]), //[1.0, 1.0]
+                ([min.x, max.y, max.z], [0.0, 0.0, 1.0], [0.0, 0.0]), //[0.0, 1.0]
             ],
             FaceType::Back => &[
                 ([min.x, max.y, min.z], [0.0, 0.0, -1.0], [1.0, 0.0]),
@@ -80,14 +80,16 @@ impl MeshBuilder for BoxFaceBuilder {
 
         let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
         let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-        let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+        let mut uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
 
-        let uvs = if self.flip {
-            let mut uvs: Vec<_> = uvs.into_iter().rev().collect();
-            uvs.rotate_right(2);
-            uvs
-        } else {
-            uvs
+        if self.flip {
+            uvs.iter_mut().for_each(|v: &mut [f32; 2]| {
+                v[1] = 1.0 - v[1];
+                //v[1] = 1.0 - v[1];
+                //if v[1].to_bits() == 1.0f32.to_bits() {
+                //    v[1] = 0.0f32;
+                //}
+            });
         };
 
         Mesh::new(
