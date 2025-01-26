@@ -221,6 +221,12 @@ fn setup_map(
                 left.clone()
             };
 
+            let pos = if voxel.right.flat {
+                pos.with_x(pos.x + 1.0)
+            } else {
+                pos
+            };
+
             commands
                 .spawn((
                     Mesh3d(mesh),
@@ -249,7 +255,7 @@ fn setup_map(
 
             commands
                 .spawn((
-                    Mesh3d(mesh),
+                    Mesh3d(mesh.clone()),
                     MeshMaterial3d(
                         map_materials
                             .index
