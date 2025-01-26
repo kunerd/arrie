@@ -4,7 +4,7 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use gta2_viewer::{
     loader::{StyleFileAsset, StyleFileAssetLoader},
     map::{
-        file::NormalFace,
+        file::{NormalFace, Rotate},
         map_box::{BoxFaceBuilder, FaceType},
         Map, MapFileAsset, MapFileAssetLoader,
     },
@@ -164,17 +164,17 @@ fn setup_map(
     // setup faces meshs
     let front = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front));
     let front_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front).set_flip(true));
-    let back = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Back));
     let left = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left));
-    let left_flip = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left).set_flip(true));
+    let left_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left).set_flip(true));
     let right = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right));
-    let right_flip = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right).set_flip(true));
+    let right_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right).set_flip(true));
     let top = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top));
-    //let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
+    let top_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top).set_flip(true));
+    let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
+    let bottom_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom).set_flip(true));
 
     const X_MAX: usize = 256;
     const Y_MAX: usize = 256;
-    const Z_MAX: usize = 8;
 
     for (i, voxel) in map_file.0.uncompressed_map.0.iter().enumerate() {
         let x = i % X_MAX;
@@ -187,103 +187,164 @@ fn setup_map(
             z: z as f32,
         };
 
-        if voxel.lid.tile_id != 0 {
-            let angle = match voxel.lid.rotate {
-                gta2_viewer::map::file::Rotate::Degree0 => {
-                    if voxel.lid.flip {
-                        TAU * 0.5
-                    } else {
-                        0.0
-                    }
-                },
-                gta2_viewer::map::file::Rotate::Degree90 => TAU * 0.25,
-                gta2_viewer::map::file::Rotate::Degree180 => {
-                    if voxel.lid.flip {
-                        TAU
-                    } else {
-                        TAU * 0.5
-                    }
-                }
-                gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
-            };
-
-            let mesh = if voxel.lid.flip {
+        let face = &voxel.lid;
+        if face.tile_id != 0 {
+            let mesh = if face.flip {
                 front_fliped.clone()
-                //front.clone()
             } else {
                 front.clone()
             };
 
-            let _front = commands
+            commands
                 .spawn((
                     Mesh3d(mesh),
                     MeshMaterial3d(
                         map_materials
                             .index
-                            .get(&(voxel.lid.tile_id))
+                            .get(&(face.tile_id))
                             .cloned()
                             .unwrap_or(unknown_tile_color.clone()),
                     ),
-                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(-angle)),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(
+                        compute_rotation(face.rotate, face.flip),
+                    )),
                     MapPos(i),
                 ))
                 .observe(on_click_show_debug);
-
-            //let _back = commands.spawn((
-            //    Mesh3d(back.clone()),
-            //    MeshMaterial3d(
-            //        map_materials
-            //            .index
-            //            .get(&(voxel.lid.tile_id))
-            //            .cloned()
-            //            .unwrap_or(unknown_tile_color.clone()),
-            //    ),
-            //    Transform::from_xyz(x as f32, y as f32, z as f32),
-            //));
         }
 
-        let left = if voxel.left.flip {
-            left_flip.clone()
-        } else {
-            left.clone()
-        };
-        spawn_face(
-            &mut commands,
-            &voxel.left,
-            left.clone(),
-            &map_materials,
-            unknown_tile_color.clone(),
-            pos,
-            i,
-        );
+        let face = &voxel.left;
+        if face.tile_id != 0 {
+            let mesh = if face.flip {
+                left_fliped.clone()
+            } else {
+                left.clone()
+            };
 
-        let right = if voxel.right.flip {
-            right_flip.clone()
-        } else {
-            right.clone()
-        };
-        spawn_face(
-            &mut commands,
-            &voxel.right,
-            right,
-            &map_materials,
-            unknown_tile_color.clone(),
-            pos,
-            i,
-        );
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(
+                        map_materials
+                            .index
+                            .get(&(face.tile_id))
+                            .cloned()
+                            .unwrap_or(unknown_tile_color.clone()),
+                    ),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(
+                        compute_rotation(face.rotate, face.flip),
+                    )),
+                    MapPos(i),
+                ))
+                .observe(on_click_show_debug);
+        }
 
-        spawn_face(
-            &mut commands,
-            &voxel.top,
-            top.clone(),
-            &map_materials,
-            unknown_tile_color.clone(),
-            pos,
-            i,
-        );
+        let face = &voxel.right;
+        if face.tile_id != 0 {
+            let mesh = if face.flip {
+                right_fliped.clone()
+            } else {
+                right.clone()
+            };
+
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(
+                        map_materials
+                            .index
+                            .get(&(face.tile_id))
+                            .cloned()
+                            .unwrap_or(unknown_tile_color.clone()),
+                    ),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(
+                        compute_rotation(face.rotate, face.flip),
+                    )),
+                    MapPos(i),
+                ))
+                .observe(on_click_show_debug);
+        }
+
+        let face = &voxel.top;
+        if face.tile_id != 0 {
+            let mesh = if face.flip {
+                top_fliped.clone()
+            } else {
+                top.clone()
+            };
+
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(
+                        map_materials
+                            .index
+                            .get(&(face.tile_id))
+                            .cloned()
+                            .unwrap_or(unknown_tile_color.clone()),
+                    ),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_y(
+                        compute_rotation(face.rotate, face.flip),
+                    )),
+                    MapPos(i),
+                ))
+                .observe(on_click_show_debug);
+        }
+
+        let face = &voxel.bottom;
+        if face.tile_id != 0 {
+            let mesh = if face.flip {
+                bottom_fliped.clone()
+            } else {
+                bottom.clone()
+            };
+
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(
+                        map_materials
+                            .index
+                            .get(&(face.tile_id))
+                            .cloned()
+                            .unwrap_or(unknown_tile_color.clone()),
+                    ),
+                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_y(
+                        compute_rotation(face.rotate, face.flip),
+                    )),
+                    MapPos(i),
+                ))
+                .observe(on_click_show_debug);
+        }
     }
 
     next_state.set(AppState::Wait)
+}
+
+fn compute_rotation(rotate: Rotate, flip: bool) -> f32 {
+    let angle = match rotate {
+        gta2_viewer::map::file::Rotate::Degree0 => {
+            // necessary, because we flip first
+            if flip {
+                TAU * 0.5
+            } else {
+                0.0
+            }
+        }
+        gta2_viewer::map::file::Rotate::Degree90 => TAU * 0.25,
+        gta2_viewer::map::file::Rotate::Degree180 => {
+            // necessary, because we flip first
+            if flip {
+                TAU
+            } else {
+                TAU * 0.5
+            }
+        }
+        gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
+    };
+
+    // rotate clock-wise
+    -angle
 }
 
 fn setup_camera_and_light(mut commands: Commands) {
@@ -306,43 +367,6 @@ fn setup_camera_and_light(mut commands: Commands) {
             Vec3::Y,
         ),
     ));
-}
-
-#[derive(Debug, Component)]
-struct Voxel {}
-
-fn spawn_face(
-    commands: &mut Commands,
-    face: &NormalFace,
-    mesh: Handle<Mesh>,
-    materials: &MapMaterialIndex,
-    unknown_tile_color: Handle<StandardMaterial>,
-    pos: Vec3,
-    map_index: usize,
-) {
-    if face.tile_id != 0 {
-        let angle = match face.rotate {
-            gta2_viewer::map::file::Rotate::Degree0 => 0.0,
-            gta2_viewer::map::file::Rotate::Degree90 => TAU * 0.25,
-            gta2_viewer::map::file::Rotate::Degree180 => TAU * 0.5,
-            gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
-        };
-
-        commands
-            .spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(
-                    materials
-                        .index
-                        .get(&(face.tile_id))
-                        .cloned()
-                        .unwrap_or(unknown_tile_color),
-                ),
-                Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(angle)),
-                MapPos(map_index),
-            ))
-            .observe(on_click_show_debug);
-    }
 }
 
 fn spawn_face_debug_text(mut commands: Commands) {

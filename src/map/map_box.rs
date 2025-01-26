@@ -12,13 +12,14 @@ pub struct BoxFaceBuilder {
     half_size: Vec3,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum FaceType {
     Front,
     Back,
     Right,
     Left,
     Top,
-    //Bottom,
+    Bottom,
 }
 
 impl BoxFaceBuilder {
@@ -69,12 +70,17 @@ impl MeshBuilder for BoxFaceBuilder {
                 ([min.x, min.y, min.z], [-1.0, 0.0, 0.0], [1.0, 1.0]),
             ],
             FaceType::Top => &[
-                ([max.x, max.y, min.z], [0.0, 1.0, 0.0], [1.0, 0.0]),
-                ([min.x, max.y, min.z], [0.0, 1.0, 0.0], [0.0, 0.0]),
-                ([min.x, max.y, max.z], [0.0, 1.0, 0.0], [0.0, 1.0]),
-                ([max.x, max.y, max.z], [0.0, 1.0, 0.0], [1.0, 1.0]),
+                ([max.x, max.y, min.z], [0.0, 1.0, 0.0], [0.0, 1.0]),
+                ([min.x, max.y, min.z], [0.0, 1.0, 0.0], [1.0, 1.0]),
+                ([min.x, max.y, max.z], [0.0, 1.0, 0.0], [1.0, 0.0]),
+                ([max.x, max.y, max.z], [0.0, 1.0, 0.0], [0.0, 0.0]),
             ],
-            //FaceType::Bottom => todo!(),
+            FaceType::Bottom => &[
+                ([max.x, min.y, max.z], [0.0, -1.0, 0.0], [1.0, 0.0]),
+                ([min.x, min.y, max.z], [0.0, -1.0, 0.0], [0.0, 0.0]),
+                ([min.x, min.y, min.z], [0.0, -1.0, 0.0], [0.0, 1.0]),
+                ([max.x, min.y, min.z], [0.0, -1.0, 0.0], [1.0, 1.0]),
+            ],
         };
         let indices = vec![0, 1, 2, 2, 3, 0];
 
@@ -85,10 +91,6 @@ impl MeshBuilder for BoxFaceBuilder {
         if self.flip {
             uvs.iter_mut().for_each(|v: &mut [f32; 2]| {
                 v[1] = 1.0 - v[1];
-                //v[1] = 1.0 - v[1];
-                //if v[1].to_bits() == 1.0f32.to_bits() {
-                //    v[1] = 0.0f32;
-                //}
             });
         };
 

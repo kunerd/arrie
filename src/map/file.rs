@@ -27,7 +27,7 @@ pub struct Map {
 
 pub struct UncompressedMap(pub Vec<BlockInfo>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Rotate {
     Degree0,
     Degree90,
@@ -46,6 +46,7 @@ impl From<u8> for Rotate {
         }
     }
 }
+
 
 #[derive(Debug)]
 pub struct NormalFace {
