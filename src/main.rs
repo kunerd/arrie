@@ -135,6 +135,7 @@ fn setup_assets(
 
         let material_handler = materials.add(StandardMaterial {
             base_color_texture: Some(image_handle.clone()),
+            alpha_mode: AlphaMode::AlphaToCoverage,
             ..default()
         });
 
