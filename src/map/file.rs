@@ -14,9 +14,9 @@ pub struct FileHeader {
 }
 
 pub struct Map {
-    pub uncompressed_map: UncompressedMap,
+    pub uncompressed_map: Option<UncompressedMap>,
     //compressed_map_16bit: CompressedMap,
-    //compressed_map_32bit: CompressedMap,
+    pub compressed_map_32bit: CompressedMap32,
     //zones: Vec<Zone>,
     //objects: Vec<Object>,
     //psx_mapping_table: PsxMappingTable,
@@ -26,6 +26,15 @@ pub struct Map {
 }
 
 pub struct UncompressedMap(pub Vec<BlockInfo>);
+
+const BASE_ARRAY_SIZE: usize = 256 * 256;
+
+#[derive(Debug, Clone)]
+pub struct CompressedMap32 {
+    base: Vec<u32>,
+    column_infos: Vec<u32>,
+    block_infos: Vec<BlockInfo>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Rotate {
@@ -42,13 +51,12 @@ impl From<u8> for Rotate {
             1 => Self::Degree90,
             2 => Self::Degree180,
             3 => Self::Degree270,
-            _ => panic!("Rotation not supported")
+            _ => panic!("Rotation not supported"),
         }
     }
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NormalFace {
     pub tile_id: usize,
     pub flat: bool,
@@ -62,18 +70,18 @@ impl From<u16> for NormalFace {
         let flat = ((value >> 12) & 0x01) == 1;
         let flip = ((value >> 13) & 0x01) == 1;
         let rotate = value >> 14;
-        let rotate = Rotate::from(rotate as u8); 
+        let rotate = Rotate::from(rotate as u8);
 
         Self {
             tile_id,
             flat,
             flip,
-            rotate
+            rotate,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LidFace {
     pub tile_id: usize,
     pub flat: bool,
@@ -85,20 +93,20 @@ impl From<u16> for LidFace {
     fn from(value: u16) -> Self {
         let tile_id = (value & 0b0000_0011_1111_1111) as usize;
         let flat = ((value >> 12) & 0x01) == 1;
-        let flip = ((value >> 13) & 0x01)  == 1;
+        let flip = ((value >> 13) & 0x01) == 1;
         let rotate = value >> 14;
-        let rotate = Rotate::from(rotate as u8); 
+        let rotate = Rotate::from(rotate as u8);
 
         Self {
             tile_id,
             flat,
             flip,
-            rotate
+            rotate,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockInfo {
     pub left: NormalFace,
     pub right: NormalFace,
@@ -180,12 +188,14 @@ enum ParseError {
 
 struct MapBuilder {
     uncompressed_map: Option<UncompressedMap>,
+    compressed_map_32: Option<CompressedMap32>,
 }
 
 impl MapBuilder {
     pub fn new() -> MapBuilder {
         MapBuilder {
             uncompressed_map: None,
+            compressed_map_32: None,
         }
     }
 
@@ -200,6 +210,10 @@ impl MapBuilder {
                 self.uncompressed_map = Some(load_uncompressed_map(size, buf_reader));
                 self
             }
+            ChunkTypes::CompressedMap32Bit => {
+                self.compressed_map_32 = Some(load_compressed_map_32(size, buf_reader));
+                self
+            }
             _ => {
                 buf_reader.seek(SeekFrom::Current(size as i64)).unwrap();
                 self
@@ -208,20 +222,98 @@ impl MapBuilder {
     }
 
     pub fn build(self) -> Option<Map> {
+        let uncompressed_map =
+            create_uncompressed_map_from_compressed(self.compressed_map_32.clone()?);
+
         Some(Map {
-            uncompressed_map: self.uncompressed_map?,
+            uncompressed_map: Some(uncompressed_map),
+            compressed_map_32bit: self.compressed_map_32?,
         })
     }
 }
 
-fn load_uncompressed_map<T: Read + Seek>(size: u32, buf_reader: &mut T) -> UncompressedMap {
-    const BLOCK_INFO_SIZE: u32 = 12;
+fn create_uncompressed_map_from_compressed(compressed: CompressedMap32) -> UncompressedMap {
+    let base: &[u32] = &compressed.base;
+    let columns: &[u32] = &compressed.column_infos;
 
+    let mut block_infos =
+        Vec::with_capacity(UncompressedMap::X * UncompressedMap::Y * UncompressedMap::Z);
+
+    for _ in 0..UncompressedMap::X * UncompressedMap::Y * UncompressedMap::Z {
+        block_infos.push(compressed.block_infos.first().unwrap().clone());
+    }
+
+    for x in 0..256 {
+        for y in 0..256 {
+            let col_index = base[y * 256 + x] as usize;
+
+            let col_info = columns[col_index];
+            let height = (col_info & 0xff) as usize;
+            let offset = ((col_info & 0xff00) >> 8) as usize;
+
+            for _ in 0..offset {
+                block_infos.push(compressed.block_infos.first().unwrap().clone());
+            }
+
+            for z in 0..height {
+                if z >= offset {
+                    let block_info = compressed
+                        .block_infos
+                        .get(columns[col_index + z - offset + 1] as usize)
+                        .unwrap();
+
+                    if let Some(block) = block_infos.get_mut((y * 256 + x) + z * 256 * 256) {
+                        *block = block_info.clone()
+                    }
+                }
+            }
+        }
+    }
+
+    //assert_eq!(
+    //    block_infos.len(),
+    //    UncompressedMap::X * UncompressedMap::Y * UncompressedMap::Z
+    //);
+
+    UncompressedMap(block_infos)
+}
+
+const BLOCK_INFO_SIZE: u32 = 12;
+fn load_uncompressed_map<T: Read + Seek>(size: u32, buf_reader: &mut T) -> UncompressedMap {
     let blocks_count = UncompressedMap::X * UncompressedMap::Y * UncompressedMap::Z;
     assert!(blocks_count as u32 * BLOCK_INFO_SIZE == size);
 
-    let mut blocks = Vec::with_capacity(blocks_count);
-    for _ in 0..blocks_count {
+    let blocks = read_block_infos(blocks_count, buf_reader);
+    UncompressedMap(blocks)
+}
+
+fn load_compressed_map_32<T: Read + Seek>(_size: u32, buf_reader: &mut T) -> CompressedMap32 {
+    let mut base = Vec::with_capacity(BASE_ARRAY_SIZE);
+    for _ in 0..BASE_ARRAY_SIZE {
+        base.push(buf_reader.read_u32::<NativeEndian>().unwrap());
+    }
+
+    let column_info_len = buf_reader.read_u32::<NativeEndian>().unwrap();
+    let mut column_infos = Vec::with_capacity(column_info_len as usize);
+    for _ in 0..column_info_len {
+        //let column_info = read_column_info(buf_reader);
+        column_infos.push(buf_reader.read_u32::<NativeEndian>().unwrap());
+    }
+
+    let block_info_len = buf_reader.read_u32::<NativeEndian>().unwrap();
+    let block_infos = read_block_infos(block_info_len as usize, buf_reader);
+
+    CompressedMap32 {
+        base,
+        column_infos,
+        block_infos,
+    }
+}
+
+fn read_block_infos<T: Read + Seek>(len: usize, buf_reader: &mut T) -> Vec<BlockInfo> {
+    let mut blocks = Vec::with_capacity(len);
+
+    for _ in 0..len {
         let block = BlockInfo {
             left: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
             right: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
@@ -235,7 +327,7 @@ fn load_uncompressed_map<T: Read + Seek>(size: u32, buf_reader: &mut T) -> Uncom
         blocks.push(block);
     }
 
-    UncompressedMap(blocks)
+    blocks
 }
 
 fn read_header<T: Read>(buf_reader: &mut T) -> FileHeader {

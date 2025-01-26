@@ -1,10 +1,10 @@
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::TAU;
 
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use gta2_viewer::{
     loader::{StyleFileAsset, StyleFileAssetLoader},
     map::{
-        file::{NormalFace, Rotate},
+        file::Rotate,
         map_box::{BoxFaceBuilder, FaceType},
         Map, MapFileAsset, MapFileAssetLoader,
     },
@@ -176,7 +176,15 @@ fn setup_map(
     const X_MAX: usize = 256;
     const Y_MAX: usize = 256;
 
-    for (i, voxel) in map_file.0.uncompressed_map.0.iter().enumerate() {
+    for (i, voxel) in map_file
+        .0
+        .uncompressed_map
+        .as_ref()
+        .unwrap()
+        .0
+        .iter()
+        .enumerate()
+    {
         let x = i % X_MAX;
         let y = Y_MAX - (i / X_MAX) % Y_MAX;
         let z = i / (X_MAX * Y_MAX);
@@ -422,7 +430,7 @@ fn on_click_show_debug(
         return;
     };
 
-    let Some(map_info) = map_file.0.uncompressed_map.0.get(pos.0) else {
+    let Some(map_info) = map_file.0.uncompressed_map.as_ref().unwrap().0.get(pos.0) else {
         return;
     };
 
