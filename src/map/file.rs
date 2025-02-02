@@ -116,7 +116,35 @@ pub struct BlockInfo {
     // TODO: use bitflags
     pub arrows: u8,
     // TODO: use bitflags
-    pub slope_type: u8,
+    //pub slope_type: u8,
+    pub slope_type: SlopeType,
+}
+
+#[derive(Debug, Clone)]
+pub enum SlopeType {
+    Diagonal(DiagonalType),
+    Ignore
+}
+
+#[derive(Debug, Clone)]
+pub enum DiagonalType {
+    UpLeft,
+    UpRight,
+    DownLeft,
+    DownRight,
+}
+
+impl From<u8> for SlopeType {
+    fn from(value: u8) -> Self {
+        let slope_type_id = value >> 2;
+        match slope_type_id {
+            45 => Self::Diagonal(DiagonalType::UpLeft),
+            46 => Self::Diagonal(DiagonalType::UpRight),
+            47 => Self::Diagonal(DiagonalType::DownLeft),
+            48 => Self::Diagonal(DiagonalType::DownRight),
+            _ => SlopeType::Ignore
+        }
+    }
 }
 
 impl Map {
@@ -321,7 +349,7 @@ fn read_block_infos<T: Read + Seek>(len: usize, buf_reader: &mut T) -> Vec<Block
             bottom: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
             lid: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
             arrows: buf_reader.read_u8().unwrap(),
-            slope_type: buf_reader.read_u8().unwrap(),
+            slope_type: SlopeType::from(buf_reader.read_u8().unwrap()),
         };
 
         blocks.push(block);

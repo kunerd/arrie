@@ -4,7 +4,7 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use gta2_viewer::{
     loader::{StyleFileAsset, StyleFileAssetLoader},
     map::{
-        file::Rotate,
+        file::{DiagonalType, Rotate, SlopeType},
         map_box::{BoxFaceBuilder, FaceType},
         Map, MapFileAsset, MapFileAssetLoader,
     },
@@ -17,6 +17,7 @@ use bevy::{
         css::GOLD,
         tailwind::{PINK_100, RED_500},
     },
+    gltf::GltfMesh,
     picking::pointer::PointerInteraction,
     prelude::*,
 };
@@ -50,6 +51,7 @@ fn main() {
             (
                 load_style_file,
                 load_map_file,
+                load_diagonal,
                 setup_camera_and_light,
                 spawn_face_debug_text,
             ),
@@ -80,6 +82,14 @@ fn load_style_file(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn load_map_file(mut commands: Commands, asset_server: Res<AssetServer>) {
     let asset = asset_server.load(MAP_PATH);
     commands.insert_resource(Map { asset });
+}
+
+#[derive(Resource)]
+struct Diagonal(Handle<Gltf>);
+
+fn load_diagonal(mut commands: Commands, ass: Res<AssetServer>) {
+    let gltf = ass.load("3-side-diagonal.glb");
+    commands.insert_resource(Diagonal(gltf));
 }
 
 fn setup_assets(
@@ -148,9 +158,12 @@ fn setup_assets(
 
 fn setup_map(
     map: Res<Map>,
+    diagonal: Res<Diagonal>,
     map_materials: Res<MapMaterialIndex>,
     maps: Res<Assets<MapFileAsset>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    assets_gltf: Res<Assets<Gltf>>,
+    assets_gltfmesh: Res<Assets<GltfMesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut next_state: ResMut<NextState<AppState>>,
@@ -159,6 +172,11 @@ fn setup_map(
         return;
     };
 
+    let Some(diagonal) = assets_gltf.get(&diagonal.0) else {
+        return;
+    };
+
+    let marker_color = materials.add(Color::srgb(1.0, 0.0, 0.0));
     let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
 
     // setup faces meshs
@@ -197,28 +215,50 @@ fn setup_map(
 
         let face = &voxel.lid;
         if face.tile_id != 0 {
-            let mesh = if face.flip {
-                front_fliped.clone()
-            } else {
-                front.clone()
-            };
+            match voxel.slope_type {
+                SlopeType::Diagonal(_) => {
+                    let lid_mesh = diagonal.named_meshes["Cube"].clone();
+                    let lid_mesh = assets_gltfmesh.get(&lid_mesh).unwrap();
+                    commands.spawn((
+                        Mesh3d(lid_mesh.primitives[0].mesh.clone()),
+                        MeshMaterial3d(
+                            //marker_color.clone(),
+                            map_materials
+                                .index
+                                .get(&(face.tile_id))
+                                .cloned()
+                                .unwrap_or(unknown_tile_color.clone()),
+                        ),
+                        Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(
+                            compute_rotation(face.rotate, face.flip),
+                        )),
+                    ));
+                }
+                SlopeType::Ignore => {
+                    let mesh = if face.flip {
+                        front_fliped.clone()
+                    } else {
+                        front.clone()
+                    };
 
-            commands
-                .spawn((
-                    Mesh3d(mesh),
-                    MeshMaterial3d(
-                        map_materials
-                            .index
-                            .get(&(face.tile_id))
-                            .cloned()
-                            .unwrap_or(unknown_tile_color.clone()),
-                    ),
-                    Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(
-                        compute_rotation(face.rotate, face.flip),
-                    )),
-                    MapPos(i),
-                ))
-                .observe(on_click_show_debug);
+                    commands
+                        .spawn((
+                            Mesh3d(mesh),
+                            MeshMaterial3d(
+                                map_materials
+                                    .index
+                                    .get(&(face.tile_id))
+                                    .cloned()
+                                    .unwrap_or(unknown_tile_color.clone()),
+                            ),
+                            Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(
+                                compute_rotation(face.rotate, face.flip),
+                            )),
+                            MapPos(i),
+                        ))
+                        .observe(on_click_show_debug);
+                }
+            };
         }
 
         let face = &voxel.left;
