@@ -215,10 +215,18 @@ fn setup_map(
 
         let face = &voxel.lid;
         if face.tile_id != 0 {
-            match voxel.slope_type {
-                SlopeType::Diagonal(_) => {
+            match &voxel.slope_type {
+                SlopeType::Diagonal(d_type) => {
                     let lid_mesh = diagonal.named_meshes["Cube"].clone();
                     let lid_mesh = assets_gltfmesh.get(&lid_mesh).unwrap();
+
+                    let angle = match d_type {
+                        DiagonalType::UpLeft => 0.0,
+                        DiagonalType::UpRight => -0.25 * TAU,
+                        DiagonalType::DownLeft => 0.25 * TAU,
+                        DiagonalType::DownRight => -0.5 * TAU,
+                    };
+
                     commands.spawn((
                         Mesh3d(lid_mesh.primitives[0].mesh.clone()),
                         MeshMaterial3d(
@@ -229,9 +237,8 @@ fn setup_map(
                                 .cloned()
                                 .unwrap_or(unknown_tile_color.clone()),
                         ),
-                        Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(
-                            compute_rotation(face.rotate, face.flip),
-                        )),
+                        Transform::from_translation(pos)
+                            .with_rotation(Quat::from_rotation_z(angle)),
                     ));
                 }
                 SlopeType::Ignore => {
