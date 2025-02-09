@@ -88,7 +88,7 @@ fn load_map_file(mut commands: Commands, asset_server: Res<AssetServer>) {
 struct Diagonal(Handle<Gltf>);
 
 fn load_diagonal(mut commands: Commands, ass: Res<AssetServer>) {
-    let gltf = ass.load("3-side-diagonal.glb");
+    let gltf = ass.load("gta2_block_model.glb");
     commands.insert_resource(Diagonal(gltf));
 }
 
@@ -156,6 +156,14 @@ fn setup_assets(
     next_state.set(AppState::SetupMap);
 }
 
+struct BlockMeshes {
+    left: Handle<Mesh>,
+    right: Handle<Mesh>,
+    top: Handle<Mesh>,
+    bottom: Handle<Mesh>,
+    lid: Handle<Mesh>,
+}
+
 fn setup_map(
     map: Res<Map>,
     diagonal: Res<Diagonal>,
@@ -176,23 +184,45 @@ fn setup_map(
         return;
     };
 
+    dbg!(diagonal);
+
     let marker_color = materials.add(Color::srgb(1.0, 0.0, 0.0));
     let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
 
+    let get_mesh = |name| {
+        let handle = diagonal.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
     // setup faces meshs
-    let front = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front));
-    let front_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front).set_flip(true));
-    let left = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left));
-    let left_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left).set_flip(true));
-    let right = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right));
-    let right_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right).set_flip(true));
-    let top = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top));
-    let top_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top).set_flip(true));
-    let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
-    let bottom_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom).set_flip(true));
+    let front = get_mesh("block.lid");
+    let front_fliped = get_mesh("block.lid.flip");
+    //let front = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front));
+    //let front_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Front).set_flip(true));
+
+    //let left = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left));
+    //let left_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Left).set_flip(true));
+    let left = get_mesh("block.left");
+    let left_fliped = get_mesh("block.left.flip");
+
+    //let right = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right));
+    //let right_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Right).set_flip(true));
+    let right = get_mesh("block.right");
+    let right_fliped = get_mesh("block.right.flip");
+
+    //let top = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top));
+    //let top_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Top).set_flip(true));
+    let top = get_mesh("block.top");
+    let top_fliped = get_mesh("block.top.flip");
+
+    //let bottom = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom));
+    //let bottom_fliped = meshes.add(BoxFaceBuilder::new(1.0, FaceType::Bottom).set_flip(true));
+    let bottom = get_mesh("block.bottom");
+    let bottom_fliped = get_mesh("block.bottom.flip");
 
     const X_MAX: usize = 256;
     const Y_MAX: usize = 256;
+
+    dbg!(map_file.0.uncompressed_map.as_ref().unwrap().0.len());
 
     for (i, voxel) in map_file
         .0
@@ -217,7 +247,7 @@ fn setup_map(
         if face.tile_id != 0 {
             match &voxel.slope_type {
                 SlopeType::Diagonal(d_type) => {
-                    let lid_mesh = diagonal.named_meshes["Cube"].clone();
+                    let lid_mesh = diagonal.named_meshes["diagonal.lid"].clone();
                     let lid_mesh = assets_gltfmesh.get(&lid_mesh).unwrap();
 
                     let angle = match d_type {
@@ -227,19 +257,19 @@ fn setup_map(
                         DiagonalType::DownRight => -0.5 * TAU,
                     };
 
-                    commands.spawn((
-                        Mesh3d(lid_mesh.primitives[0].mesh.clone()),
-                        MeshMaterial3d(
-                            //marker_color.clone(),
-                            map_materials
-                                .index
-                                .get(&(face.tile_id))
-                                .cloned()
-                                .unwrap_or(unknown_tile_color.clone()),
-                        ),
-                        Transform::from_translation(pos)
-                            .with_rotation(Quat::from_rotation_z(angle)),
-                    ));
+                    //commands.spawn((
+                    //    Mesh3d(lid_mesh.primitives[0].mesh.clone()),
+                    //    MeshMaterial3d(
+                    //        //marker_color.clone(),
+                    //        map_materials
+                    //            .index
+                    //            .get(&(face.tile_id))
+                    //            .cloned()
+                    //            .unwrap_or(unknown_tile_color.clone()),
+                    //    ),
+                    //    Transform::from_translation(pos)
+                    //        .with_rotation(Quat::from_rotation_z(angle)),
+                    //));
                 }
                 SlopeType::Ignore => {
                     let mesh = if face.flip {
@@ -384,24 +414,22 @@ fn setup_map(
 
 fn compute_rotation(rotate: Rotate, flip: bool) -> f32 {
     let angle = match rotate {
-        gta2_viewer::map::file::Rotate::Degree0 => {
-            // necessary, because we flip first
+        gta2_viewer::map::file::Rotate::Degree0 => 0.0,
+        gta2_viewer::map::file::Rotate::Degree90 => {
             if flip {
-                TAU * 0.5
+                TAU * 0.75
             } else {
-                0.0
+                TAU * 0.25
             }
         }
-        gta2_viewer::map::file::Rotate::Degree90 => TAU * 0.25,
-        gta2_viewer::map::file::Rotate::Degree180 => {
-            // necessary, because we flip first
+        gta2_viewer::map::file::Rotate::Degree180 => TAU * 0.5,
+        gta2_viewer::map::file::Rotate::Degree270 => {
             if flip {
-                TAU
+                TAU * 0.25
             } else {
-                TAU * 0.5
+                TAU * 0.75
             }
         }
-        gta2_viewer::map::file::Rotate::Degree270 => TAU * 0.75,
     };
 
     // rotate clock-wise
