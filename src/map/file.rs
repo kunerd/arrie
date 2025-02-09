@@ -13,6 +13,7 @@ pub struct FileHeader {
     pub version: u16,
 }
 
+#[derive(Debug)]
 pub struct Map {
     pub uncompressed_map: Option<UncompressedMap>,
     //compressed_map_16bit: CompressedMap,
@@ -25,6 +26,7 @@ pub struct Map {
     //junctions: Vec<Junction>
 }
 
+#[derive(Debug)]
 pub struct UncompressedMap(pub Vec<BlockInfo>);
 
 const BASE_ARRAY_SIZE: usize = 256 * 256;

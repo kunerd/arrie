@@ -1,5 +1,5 @@
 [package]
-name = "gta2_viewer"
+name = "arrie"
 version = "0.1.0"
 authors = ["Hendrik Kunert <hendrik.kunert@henku.de>"]
 edition = "2021"
@@ -13,6 +13,24 @@ futures-lite = "2.0.1"
 wgpu = { version = "23.0.1", default-features = false }
 thiserror = "2.0"
 byteorder = "1"
+
+[features]
+default = [
+  # Default to a native dev build.
+  "dev_native",
+]
+dev = [
+  # Improve compile times for dev builds by linking Bevy as a dynamic library.
+  "bevy/dynamic_linking",
+  "bevy/bevy_dev_tools",
+]
+dev_native = [
+  "dev",
+  # Enable asset hot reloading for native dev builds.
+  "bevy/file_watcher",
+  # Enable embedded asset hot reloading for native dev builds.
+  "bevy/embedded_watcher",
+]
 
 [dependencies.sdl2]
 version = "0.37"
