@@ -124,8 +124,36 @@ pub struct BlockInfo {
 
 #[derive(Debug, Clone)]
 pub enum SlopeType {
+    None,
+    Degree7 {
+        direction: SlopeDirection,
+        level: SlopeLevel,
+    },
+    Degree26 {
+        direction: SlopeDirection,
+        level: SlopeLevel,
+    },
+    Degree45(SlopeDirection),
     Diagonal(DiagonalType),
-    Ignore
+    ThreeSidedDiagonal(DiagonalType),
+    FourSidedDiagonal(DiagonalType),
+    PartialBlock,
+    PartialCornerBlock,
+    Ignore,
+}
+
+#[derive(Debug, Clone)]
+pub enum SlopeDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone)]
+pub enum SlopeLevel {
+    Low,
+    High,
 }
 
 #[derive(Debug, Clone)]
@@ -140,11 +168,44 @@ impl From<u8> for SlopeType {
     fn from(value: u8) -> Self {
         let slope_type_id = value >> 2;
         match slope_type_id {
+            0 => Self::None,
+            1 => Self::Degree26 {
+                direction: SlopeDirection::Up,
+                level: SlopeLevel::Low,
+            },
+            2 => Self::Degree26 {
+                direction: SlopeDirection::Up,
+                level: SlopeLevel::High,
+            },
+            3 => Self::Degree26 {
+                direction: SlopeDirection::Down,
+                level: SlopeLevel::Low,
+            },
+            4 => Self::Degree26 {
+                direction: SlopeDirection::Down,
+                level: SlopeLevel::High,
+            },
+            5 => Self::Degree26 {
+                direction: SlopeDirection::Left,
+                level: SlopeLevel::Low,
+            },
+            6 => Self::Degree26 {
+                direction: SlopeDirection::Left,
+                level: SlopeLevel::High,
+            },
+            7 => Self::Degree26 {
+                direction: SlopeDirection::Right,
+                level: SlopeLevel::Low,
+            },
+            8 => Self::Degree26 {
+                direction: SlopeDirection::Right,
+                level: SlopeLevel::High,
+            },
             45 => Self::Diagonal(DiagonalType::UpLeft),
             46 => Self::Diagonal(DiagonalType::UpRight),
             47 => Self::Diagonal(DiagonalType::DownLeft),
             48 => Self::Diagonal(DiagonalType::DownRight),
-            _ => SlopeType::Ignore
+            _ => SlopeType::Ignore,
         }
     }
 }
