@@ -241,35 +241,6 @@ fn setup_map(
         }
     }
 
-    //    let face = &voxel.lid;
-    //    if face.tile_id != 0 {
-    //        match &voxel.slope_type {
-    //            SlopeType::Diagonal(d_type) => {
-    //                let lid_mesh = block_gltf.named_meshes["diagonal.lid"].clone();
-    //                let lid_mesh = assets_gltfmesh.get(&lid_mesh).unwrap();
-
-    //                let angle = match d_type {
-    //                    DiagonalType::UpLeft => -0.25 * TAU,
-    //                    DiagonalType::UpRight => -0.5 * TAU,
-    //                    DiagonalType::DownLeft => 0.0,
-    //                    DiagonalType::DownRight => 0.25 * TAU,
-    //                };
-
-    //                commands.spawn((
-    //                    Mesh3d(lid_mesh.primitives[0].mesh.clone()),
-    //                    MeshMaterial3d(
-    //                        map_materials
-    //                            .index
-    //                            .get(&(face.tile_id))
-    //                            .cloned()
-    //                            .unwrap_or(unknown_tile_color.clone()),
-    //                    ),
-    //                    Transform::from_translation(pos)
-    //                        .with_rotation(Quat::from_rotation_z(angle)),
-    //                ));
-    //            }
-    //}
-
     next_state.set(MapState::Loaded)
 }
 
@@ -282,37 +253,27 @@ fn spawn_normal_block(
     map_materials: &Res<MapMaterialIndex>,
     unknown_tile_color: &Handle<StandardMaterial>,
 ) {
-    let get_mesh = |name| {
-        let handle = block_gltf.named_meshes[name].clone();
+    let get_mesh = |name: &str, fliped| {
+        let name = if fliped {
+            format!("{name}.flip")
+        } else {
+            name.to_string()
+        };
+        let handle = block_gltf.named_meshes[name.as_str()].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
     };
 
     // setup faces meshs
-    let front = get_mesh("block.lid");
-    let front_fliped = get_mesh("block.lid.flip");
-
-    let left = get_mesh("block.left");
-    let left_fliped = get_mesh("block.left.flip");
-
-    let right = get_mesh("block.right");
-    let right_fliped = get_mesh("block.right.flip");
-
-    let top = get_mesh("block.top");
-    let top_fliped = get_mesh("block.top.flip");
-
-    let bottom = get_mesh("block.bottom");
-    let bottom_fliped = get_mesh("block.bottom.flip");
+    let front = get_mesh("block.lid", voxel.lid.flip);
+    let left = get_mesh("block.left", voxel.left.flip);
+    let right = get_mesh("block.right", voxel.right.flip);
+    let top = get_mesh("block.top", voxel.top.flip);
+    let bottom = get_mesh("block.bottom", voxel.bottom.flip);
 
     let face = &voxel.lid;
     if face.tile_id != 0 {
-        let mesh = if face.flip {
-            front_fliped.clone()
-        } else {
-            front.clone()
-        };
-
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(front.clone()),
             MeshMaterial3d(
                 map_materials
                     .index
@@ -330,12 +291,6 @@ fn spawn_normal_block(
 
     let face = &voxel.left;
     if face.tile_id != 0 {
-        let mesh = if face.flip {
-            left_fliped.clone()
-        } else {
-            left.clone()
-        };
-
         let pos = if voxel.right.flat {
             pos.with_x(pos.x + 1.0)
         } else {
@@ -343,7 +298,7 @@ fn spawn_normal_block(
         };
 
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(left.clone()),
             MeshMaterial3d(
                 map_materials
                     .index
@@ -361,14 +316,8 @@ fn spawn_normal_block(
 
     let face = &voxel.right;
     if face.tile_id != 0 {
-        let mesh = if face.flip {
-            right_fliped.clone()
-        } else {
-            right.clone()
-        };
-
         commands.spawn((
-            Mesh3d(mesh.clone()),
+            Mesh3d(right.clone()),
             MeshMaterial3d(
                 map_materials
                     .index
@@ -386,14 +335,8 @@ fn spawn_normal_block(
 
     let face = &voxel.top;
     if face.tile_id != 0 {
-        let mesh = if face.flip {
-            top_fliped.clone()
-        } else {
-            top.clone()
-        };
-
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(top.clone()),
             MeshMaterial3d(
                 map_materials
                     .index
@@ -411,14 +354,8 @@ fn spawn_normal_block(
 
     let face = &voxel.bottom;
     if face.tile_id != 0 {
-        let mesh = if face.flip {
-            bottom_fliped.clone()
-        } else {
-            bottom.clone()
-        };
-
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(bottom.clone()),
             MeshMaterial3d(
                 map_materials
                     .index
