@@ -582,25 +582,25 @@ fn spawn_degree_45_block(
 
     // setup faces meshs
     let front = get_mesh("degree_45.lid");
-    let front_fliped = get_mesh("degree_45.lid");
+    let front_fliped = get_mesh("degree_45.lid.flip");
 
     let left = get_mesh("degree_45.left");
-    let left_fliped = get_mesh("degree_45.left");
+    let left_fliped = get_mesh("degree_45.left.flip");
 
     let right = get_mesh("degree_45.right");
-    let right_fliped = get_mesh("degree_45.right");
+    let right_fliped = get_mesh("degree_45.right.flip");
 
-    let top = get_mesh("degree_45.left");
-    let top_fliped = get_mesh("degree_45.left");
+    let top = get_mesh("block.top");
+    let top_fliped = get_mesh("block.top.flip");
 
-    let bottom = get_mesh("degree_45.right");
-    let bottom_fliped = get_mesh("degree_45.right");
+    let bottom = get_mesh("block.bottom");
+    let bottom_fliped = get_mesh("block.bottom.flip");
 
-    let angle = match slope_direction {
-        SlopeDirection::Down => 0.5 * TAU,
-        SlopeDirection::Up => 0.0,
-        SlopeDirection::Left => 0.25 * TAU,
-        SlopeDirection::Right => -0.25 * TAU,
+    let (angle, left_face, right_face, top_face, bottom_material_id) = match slope_direction {
+        SlopeDirection::Down => (0.5 * TAU, &voxel.left, &voxel.right, &voxel.top, 0),
+        SlopeDirection::Up => (0.0, &voxel.right, &voxel.left, &voxel.bottom, 0),
+        SlopeDirection::Left => (0.25 * TAU, &voxel.top, &voxel.bottom, &voxel.right, 0),
+        SlopeDirection::Right => (-0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.left, 0),
     };
 
     let face = &voxel.lid;
@@ -616,7 +616,7 @@ fn spawn_degree_45_block(
             MeshMaterial3d(
                 map_materials
                     .index
-                    .get(&(face.tile_id))
+                    .get(&face.tile_id)
                     .cloned()
                     .unwrap_or(unknown_tile_color.clone()),
             ),
@@ -631,7 +631,7 @@ fn spawn_degree_45_block(
         //.observe(on_click_show_debug);
     }
 
-    let face = &voxel.left;
+    let face = &left_face;
     if face.tile_id != 0 {
         let mesh = if face.flip {
             left_fliped.clone()
@@ -650,7 +650,7 @@ fn spawn_degree_45_block(
             MeshMaterial3d(
                 map_materials
                     .index
-                    .get(&(face.tile_id))
+                    .get(&face.tile_id)
                     .cloned()
                     .unwrap_or(unknown_tile_color.clone()),
             ),
@@ -665,7 +665,7 @@ fn spawn_degree_45_block(
         //.observe(on_click_show_debug);
     }
 
-    let face = &voxel.right;
+    let face = &right_face;
     if face.tile_id != 0 {
         let mesh = if face.flip {
             right_fliped.clone()
@@ -678,7 +678,7 @@ fn spawn_degree_45_block(
             MeshMaterial3d(
                 map_materials
                     .index
-                    .get(&(face.tile_id))
+                    .get(&face.tile_id)
                     .cloned()
                     .unwrap_or(unknown_tile_color.clone()),
             ),
@@ -693,7 +693,7 @@ fn spawn_degree_45_block(
         //.observe(on_click_show_debug);
     }
 
-    let face = &voxel.top;
+    let face = &top_face;
     if face.tile_id != 0 {
         let mesh = if face.flip {
             top_fliped.clone()
@@ -706,7 +706,7 @@ fn spawn_degree_45_block(
             MeshMaterial3d(
                 map_materials
                     .index
-                    .get(&(face.tile_id))
+                    .get(&face.tile_id)
                     .cloned()
                     .unwrap_or(unknown_tile_color.clone()),
             ),
@@ -721,33 +721,33 @@ fn spawn_degree_45_block(
         //.observe(on_click_show_debug);
     }
 
-    let face = &voxel.bottom;
-    if face.tile_id != 0 {
-        let mesh = if face.flip {
-            bottom_fliped.clone()
-        } else {
-            bottom.clone()
-        };
+    //let face = &voxel.bottom;
+    //if bottom_material_id != 0 {
+    //    let mesh = if face.flip {
+    //        bottom_fliped.clone()
+    //    } else {
+    //        bottom.clone()
+    //    };
 
-        commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(
-                map_materials
-                    .index
-                    .get(&(face.tile_id))
-                    .cloned()
-                    .unwrap_or(unknown_tile_color.clone()),
-            ),
-            Transform::from_translation(pos)
-                .with_rotation(Quat::from_rotation_y(compute_rotation(
-                    face.rotate,
-                    face.flip,
-                )))
-                .with_rotation(Quat::from_rotation_z(angle)),
-            //MapPos(i),
-        ));
-        //.observe(on_click_show_debug);
-    }
+    //    commands.spawn((
+    //        Mesh3d(mesh),
+    //        MeshMaterial3d(
+    //            map_materials
+    //                .index
+    //                .get(&bottom_material_id)
+    //                .cloned()
+    //                .unwrap_or(unknown_tile_color.clone()),
+    //        ),
+    //        Transform::from_translation(pos)
+    //            .with_rotation(Quat::from_rotation_y(compute_rotation(
+    //                face.rotate,
+    //                face.flip,
+    //            )))
+    //            .with_rotation(Quat::from_rotation_z(angle)),
+    //        //MapPos(i),
+    //    ));
+    //    //.observe(on_click_show_debug);
+    //}
 }
 
 fn compute_rotation(rotate: Rotate, flip: bool) -> f32 {
