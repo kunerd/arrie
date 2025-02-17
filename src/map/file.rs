@@ -209,6 +209,11 @@ impl From<u8> for SlopeType {
             46 => Self::Diagonal(DiagonalType::UpRight),
             47 => Self::Diagonal(DiagonalType::DownLeft),
             48 => Self::Diagonal(DiagonalType::DownRight),
+            // FIXME: could also be 4-sided
+            49 => Self::ThreeSidedDiagonal(DiagonalType::UpLeft),
+            50 => Self::ThreeSidedDiagonal(DiagonalType::UpRight),
+            51 => Self::ThreeSidedDiagonal(DiagonalType::DownLeft),
+            52 => Self::ThreeSidedDiagonal(DiagonalType::DownRight),
             _ => SlopeType::Ignore,
         }
     }
