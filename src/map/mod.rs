@@ -14,6 +14,7 @@ pub use loader::{MapFileAsset, MapFileAssetLoader, MapFileAssetLoaderError};
 use wgpu::{TextureDimension, TextureFormat};
 
 use std::{
+    borrow::BorrowMut,
     f32::consts::TAU,
     fmt::Display,
     path::{Path, PathBuf},
@@ -34,7 +35,8 @@ pub fn plugin(app: &mut App) {
         .insert_state(MapState::NotLoaded)
         .add_systems(OnEnter(MapState::NotLoaded), load_map_resources)
         .add_systems(Update, setup_assets.run_if(in_state(MapState::SetupAssets)))
-        .add_systems(Update, setup_map.run_if(in_state(MapState::SetupMap)));
+        .add_systems(Update, setup_map.run_if(in_state(MapState::SetupMap)))
+        .add_systems(Update, spawn_blocks.run_if(in_state(MapState::Loaded)));
 }
 
 fn load_map_resources(
@@ -128,76 +130,31 @@ fn setup_assets(
 #[derive(Resource)]
 struct BlockMesh(Handle<Gltf>);
 
-struct Face {
-    mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
-    rotation: f32,
-}
-
-impl Face {
-    //fn new(mesh_name: &str, block_info: BlockInfo) -> Self {
-    //    Self { mesh, material, rotation }
-    //}
-}
-
-struct Block {
-    lid: Option<Face>,
-    left: Option<Face>,
-    right: Option<Face>,
-    top: Option<Face>,
-    bottom: Option<Face>,
-}
-
-impl Block {
-    //fn from(block_info: BlockInfo) -> Self {
-    //    let lid = Face::new(block_info.lid);
-    //    let left = None;
-    //    let right = None;
-    //    let top = None;
-    //    let bottom = None;
-
-    //    Self {
-    //        lid,
-    //        left,
-    //        right,
-    //        top,
-    //        bottom,
-    //    }
-    //}
+#[derive(Component)]
+struct UnloadedBlock {
+    info: BlockInfo,
+    pos: Vec3,
 }
 
 fn setup_map(
     map: Res<Map>,
-    map_asset: Res<Assets<MapFileAsset>>,
-    block_mesh_res: Res<BlockMesh>,
-    map_materials: Res<MapMaterialIndex>,
-    assets_gltf: Res<Assets<Gltf>>,
-    assets_gltfmesh: Res<Assets<GltfMesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut map_asset: ResMut<Assets<MapFileAsset>>,
     mut commands: Commands,
     mut next_state: ResMut<NextState<MapState>>,
 ) {
-    let Some(map_file) = map_asset.get(&map.asset.clone()) else {
+    let Some(map_file) = map_asset.remove(&map.asset) else {
         return;
     };
-
-    let Some(block_gltf) = assets_gltf.get(&block_mesh_res.0) else {
-        return;
-    };
-
-    let marker_color = materials.add(Color::srgb(1.0, 0.0, 0.0));
-    let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
 
     const X_MAX: usize = 256;
     const Y_MAX: usize = 256;
 
-    for (i, voxel) in map_file
+    for (i, block_info) in map_file
         .0
         .uncompressed_map
-        .as_ref()
         .unwrap()
         .0
-        .iter()
+        .into_iter()
         .enumerate()
     {
         let x = i % X_MAX;
@@ -210,7 +167,47 @@ fn setup_map(
             z: z as f32,
         };
 
+        commands.spawn(UnloadedBlock {
+            info: block_info,
+            pos,
+        });
+    }
+
+    next_state.set(MapState::Loaded)
+}
+
+fn spawn_blocks(
+    block_mesh_res: Res<BlockMesh>,
+    map_materials: Res<MapMaterialIndex>,
+    assets_gltf: Res<Assets<Gltf>>,
+    assets_gltfmesh: Res<Assets<GltfMesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+    mut blocks: Query<(Entity, &mut UnloadedBlock)>, //mut next_state: ResMut<NextState<MapState>>,
+) {
+    let Some(block_gltf) = assets_gltf.get(&block_mesh_res.0) else {
+        return;
+    };
+
+    let marker_color = materials.add(Color::srgb(1.0, 0.0, 0.0));
+    let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
+
+    for (entity, block) in &mut blocks {
+        let pos = block.pos;
+        let voxel = &block.info;
+
+        commands.entity(entity).despawn();
+
         match &voxel.slope_type {
+            SlopeType::None => spawn_normal_block(
+                pos,
+                &mut commands,
+                voxel,
+                block_gltf,
+                &assets_gltfmesh,
+                &map_materials,
+                &unknown_tile_color,
+            ),
             SlopeType::Diagonal(diagonal_type) => spawn_diagonal_block(
                 pos,
                 diagonal_type,
@@ -252,15 +249,7 @@ fn setup_map(
                 &map_materials,
                 &marker_color,
             ),
-            SlopeType::None | _ => spawn_normal_block(
-                pos,
-                &mut commands,
-                voxel,
-                block_gltf,
-                &assets_gltfmesh,
-                &map_materials,
-                &unknown_tile_color,
-            ),
+            _ => {}
             //SlopeType::Degree7 { direction, level \} => todo!(),
             //SlopeType::Degree26 { direction, level \} => todo!(),
             //SlopeType::ThreeSidedDiagonal(diagonal_type) => todo!(),
@@ -270,8 +259,6 @@ fn setup_map(
             //SlopeType::Ignore => todo!(),
         }
     }
-
-    next_state.set(MapState::Loaded)
 }
 
 fn spawn_normal_block(
