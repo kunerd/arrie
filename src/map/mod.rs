@@ -317,8 +317,50 @@ fn spawn_blocks(
     }
 }
 
+struct BlockBuilder {
+    lid: Option<BlockFace>,
+    left: Option<BlockFace>,
+    right: Option<BlockFace>,
+    top: Option<BlockFace>,
+    bottom: Option<BlockFace>,
+    position: Vec3,
+}
+
+impl Command for BlockBuilder {
+    fn apply(self, world: &mut World) {
+        world
+            .spawn((
+                Block,
+                Visibility::Visible,
+                Transform::from_translation(self.position),
+            ))
+            .with_children(|parent| {
+                let mut spawn_child_maybe = |maybe_child| {
+                    if let Some(child) = maybe_child {
+                        parent.spawn(child);
+                    }
+                };
+
+                spawn_child_maybe(self.lid);
+                spawn_child_maybe(self.left);
+                spawn_child_maybe(self.right);
+                spawn_child_maybe(self.top);
+                spawn_child_maybe(self.bottom);
+            });
+    }
+}
+
+#[derive(Component)]
+struct Block;
+
+#[derive(Bundle)]
+struct BlockFace {
+    mesh: Mesh3d,
+    material: MeshMaterial3d<ExtendedMaterial<StandardMaterial, MyExtension>>,
+}
+
 fn spawn_normal_block(
-    pos: Vec3,
+    position: Vec3,
     commands: &mut Commands,
     voxel: &BlockInfo,
     block_gltf: &Gltf,
@@ -331,117 +373,48 @@ fn spawn_normal_block(
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
     };
 
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
     let lid = get_mesh("block.lid");
     let left = get_mesh("block.left");
     let right = get_mesh("block.right");
     let top = get_mesh("block.top");
     let bottom = get_mesh("block.bottom");
 
-    let face = &voxel.lid;
-    if face.tile_id != 0 {
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate),
-        });
+    let block_builder = BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone())),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(voxel.left.clone())),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(voxel.right.clone())),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(voxel.top.clone())),
+        bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(voxel.bottom.clone())),
+        position,
+    };
 
-        commands.spawn((
-            Mesh3d(lid.clone()),
-            MeshMaterial3d(ext_material),
-            FaceInfo::Lid(face.clone()),
-            Transform::from_translation(pos),
-        ));
-    }
-
-    let face = &voxel.left;
-    if face.tile_id != 0 {
-        let pos = if voxel.right.flat {
-            pos.with_x(pos.x + 1.0)
-        } else {
-            pos
-        };
-
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate),
-        });
-
-        commands.spawn((
-            Mesh3d(left.clone()),
-            MeshMaterial3d(ext_material),
-            FaceInfo::Normal(face.clone()),
-            Transform::from_translation(pos),
-        ));
-    }
-
-    let face = &voxel.right;
-    if face.tile_id != 0 {
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate),
-        });
-
-        commands.spawn((
-            Mesh3d(right.clone()),
-            MeshMaterial3d(ext_material),
-            FaceInfo::Normal(face.clone()),
-            Transform::from_translation(pos),
-        ));
-    }
-
-    let face = &voxel.top;
-    if face.tile_id != 0 {
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate),
-        });
-
-        commands.spawn((
-            Mesh3d(top.clone()),
-            MeshMaterial3d(ext_material),
-            FaceInfo::Normal(face.clone()),
-            Transform::from_translation(pos),
-        ));
-    }
-
-    let face = &voxel.bottom;
-    if face.tile_id != 0 {
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate),
-        });
-
-        commands.spawn((
-            Mesh3d(bottom.clone()),
-            MeshMaterial3d(ext_material),
-            FaceInfo::Normal(face.clone()),
-            Transform::from_translation(pos),
-        ));
-    }
+    commands.queue(block_builder);
 }
 
 //fn spawn_diagonal_block(
