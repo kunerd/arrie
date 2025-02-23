@@ -1,8 +1,5 @@
 use std::{
-    fs::File,
-    io::{BufReader, Cursor, Read, Seek, SeekFrom},
-    path::Path,
-    str::FromStr,
+    f32::consts::TAU, fs::File, io::{BufReader, Cursor, Read, Seek, SeekFrom}, path::Path, str::FromStr
 };
 
 use byteorder::{NativeEndian, ReadBytesExt};
@@ -44,6 +41,19 @@ pub enum Rotate {
     Degree90,
     Degree180,
     Degree270,
+}
+
+impl Rotate {
+    pub fn clockwise_rad(&self) -> f32 {
+        let fraction = match self {
+            Rotate::Degree0 => 0.0,
+            Rotate::Degree90 => 0.25,
+            Rotate::Degree180 => 0.5,
+            Rotate::Degree270 => 0.75,
+        };
+
+        TAU * fraction
+    }
 }
 
 impl From<u8> for Rotate {
