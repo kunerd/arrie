@@ -196,18 +196,9 @@ struct MyExtension {
     holder: MyExtensionHolder,
 }
 impl MyExtension {
-    fn new(flip: bool, rotate: Rotate) -> Self {
+    fn new(flip: bool, angle: f32) -> Self {
         //let angle = -compute_rotation(rotate, flip);
         let flip = if flip { 1 } else { 0 };
-
-        let fraction = match rotate {
-            Rotate::Degree0 => 0.0,
-            Rotate::Degree90 => 0.25,
-            Rotate::Degree180 => 0.5,
-            Rotate::Degree270 => 0.75,
-        };
-
-        let angle = TAU * fraction;
 
         Self {
             holder: MyExtensionHolder { flip, angle },
@@ -265,50 +256,48 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             ),
-            //SlopeType::Diagonal(diagonal_type) => spawn_diagonal_block(
-            //    pos,
-            //    diagonal_type,
-            //    &mut commands,
-            //    voxel,
-            //    block_gltf,
-            //    &assets_gltfmesh,
-            //    &map_materials,
-            //    &unknown_tile_color,
-            //),
-            //SlopeType::ThreeSidedDiagonal(diagonal_type) => spawn_3_sided_diagonal_block(
-            //    pos,
-            //    diagonal_type,
-            //    &mut commands,
-            //    voxel,
-            //    block_gltf,
-            //    &assets_gltfmesh,
-            //    &map_materials,
-            //    &unknown_tile_color,
-            //),
-            //SlopeType::Degree26 { direction, level } => spawn_degree_26_block(
-            //    pos,
-            //    direction,
-            //    level,
-            //    &mut commands,
-            //    voxel,
-            //    block_gltf,
-            //    &assets_gltfmesh,
-            //    &map_materials,
-            //    &marker_color,
-            //),
-            //SlopeType::Degree45(slope_direction) => spawn_degree_45_block(
-            //    pos,
-            //    slope_direction,
-            //    &mut commands,
-            //    voxel,
-            //    block_gltf,
-            //    &assets_gltfmesh,
-            //    &map_materials,
-            //    &marker_color,
-            //),
+            SlopeType::Diagonal(diagonal_type) => spawn_diagonal_block(
+                pos,
+                voxel,
+                diagonal_type,
+                &mut commands,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            ),
+            SlopeType::ThreeSidedDiagonal(diagonal_type) => spawn_3_sided_diagonal_block(
+                pos,
+                diagonal_type,
+                voxel,
+                &mut commands,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            ),
+            SlopeType::Degree26 { direction, level } => spawn_degree_26_block(
+                pos,
+                direction,
+                level,
+                voxel,
+                &mut commands,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            ),
+            SlopeType::Degree45(slope_direction) => spawn_degree_45_block(
+                pos,
+                slope_direction,
+                voxel,
+                &mut commands,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            ),
             _ => {} //SlopeType::Degree7 { direction, level \} => todo!(),
-                    //SlopeType::Degree26 { direction, level \} => todo!(),
-                    //SlopeType::ThreeSidedDiagonal(diagonal_type) => todo!(),
                     //SlopeType::FourSidedDiagonal(diagonal_type) => todo!(),
                     //SlopeType::PartialBlock => todo!(),
                     //SlopeType::PartialCornerBlock => todo!(),
@@ -324,16 +313,19 @@ struct BlockBuilder {
     top: Option<BlockFace>,
     bottom: Option<BlockFace>,
     position: Vec3,
+    rotation: Option<f32>,
 }
 
 impl Command for BlockBuilder {
     fn apply(self, world: &mut World) {
+        let mut transform = Transform::from_translation(self.position);
+
+        if let Some(angle) = self.rotation {
+            transform = transform.with_rotation(Quat::from_rotation_z(angle));
+        }
+
         world
-            .spawn((
-                Block,
-                Visibility::Visible,
-                Transform::from_translation(self.position),
-            ))
+            .spawn((Block, Visibility::Visible, transform))
             .with_children(|parent| {
                 let mut spawn_child_maybe = |maybe_child| {
                     if let Some(child) = maybe_child {
@@ -390,7 +382,7 @@ fn spawn_normal_block(
                 alpha_mode: AlphaMode::AlphaToCoverage,
                 ..default()
             },
-            extension: MyExtension::new(flip, rotation),
+            extension: MyExtension::new(flip, rotation.clockwise_rad()),
         });
 
         Some(BlockFace {
@@ -412,952 +404,425 @@ fn spawn_normal_block(
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(voxel.top.clone())),
         bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(voxel.bottom.clone())),
         position,
+        rotation: None,
     };
 
     commands.queue(block_builder);
 }
 
-//fn spawn_diagonal_block(
-//    pos: Vec3,
-//    diagonal_type: &DiagonalType,
-//    commands: &mut Commands,
-//    voxel: &BlockInfo,
-//    block_gltf: &Gltf,
-//    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-//    map_materials: &Res<TextureIndex>,
-//    unknown_tile_color: &Handle<StandardMaterial>,
-//) {
-//    let get_mesh = |name| {
-//        let handle = block_gltf.named_meshes[name].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//
-//    // setup faces meshs
-//    let front = get_mesh("diagonal.lid");
-//    let front_fliped = get_mesh("diagonal.lid.flip");
-//
-//    let left = get_mesh("diagonal.front");
-//    let left_fliped = get_mesh("diagonal.front.flip");
-//
-//    let right = get_mesh("block.right");
-//    let right_fliped = get_mesh("block.right.flip");
-//
-//    let top = get_mesh("block.top");
-//    let top_fliped = get_mesh("block.top.flip");
-//
-//    //let bottom = get_mesh("block.bottom");
-//    //let bottom_fliped = get_mesh("block.bottom.flip");
-//
-//    let (angle, front_face, top_face, right_face) = match diagonal_type {
-//        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
-//        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
-//        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
-//        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
-//    };
-//    let face = &voxel.lid;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            front_fliped.clone()
-//        } else {
-//            front.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_z(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = front_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            left_fliped.clone()
-//        } else {
-//            left.clone()
-//        };
-//
-//        let pos = if voxel.right.flat {
-//            pos.with_x(pos.x + 1.0)
-//        } else {
-//            pos
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = right_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            right_fliped.clone()
-//        } else {
-//            right.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh.clone()),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = top_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            top_fliped.clone()
-//        } else {
-//            top.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_y(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    //let face = &voxel.bottom;
-//    //if face.tile_id != 0 {
-//    //    let mesh = if face.flip {
-//    //        bottom_fliped.clone()
-//    //    } else {
-//    //        bottom.clone()
-//    //    };
-//
-//    //    commands.spawn((
-//    //        Mesh3d(mesh),
-//    //        MeshMaterial3d(
-//    //            map_materials
-//    //                .index
-//    //                .get(&(face.tile_id))
-//    //                .cloned()
-//    //                .unwrap_or(unknown_tile_color.clone()),
-//    //        ),
-//    //        Transform::from_translation(pos)
-//    //            .with_rotation(Quat::from_rotation_y(compute_rotation(
-//    //                face.rotate,
-//    //                face.flip,
-//    //            )))
-//    //            .with_rotation(Quat::from_rotation_z(angle)),
-//    //        //MapPos(i),
-//    //    ));
-//    //    //.observe(on_click_show_debug);
-//    //}
-//}
-//
-//fn spawn_degree_26_block(
-//    pos: Vec3,
-//    direction: &SlopeDirection,
-//    level: &file::SlopeLevel,
-//    commands: &mut Commands<'_, '_>,
-//    voxel: &BlockInfo,
-//    block_gltf: &Gltf,
-//    assets_gltfmesh: &Assets<GltfMesh>,
-//    map_materials: &TextureIndex,
-//    unknown_tile_color: &Handle<StandardMaterial>,
-//) {
-//    let level_name = match level {
-//        SlopeLevel::Low => "low",
-//        SlopeLevel::High => "high",
-//    };
-//
-//    let base_name = format!("slope_2.{level_name}");
-//    let get_mesh = |name| {
-//        let name = format!("{base_name}.{name}");
-//        let handle = block_gltf.named_meshes[name.as_str()].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//    let get_mesh_1 = |name| {
-//        let handle = block_gltf.named_meshes[name].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//
-//    // setup faces meshs
-//    let front = get_mesh("lid");
-//    let front_fliped = get_mesh("lid.flip");
-//
-//    let left = get_mesh("left");
-//    let left_fliped = get_mesh("left.flip");
-//
-//    let right = get_mesh("right");
-//    let right_fliped = get_mesh("right.flip");
-//
-//    let top = if matches!(level, file::SlopeLevel::High) {
-//        Some((get_mesh_1("block.top"), get_mesh_1("block.top.flip")))
-//    } else {
-//        None
-//    };
-//
-//    let (angle, left_face, right_face, top_face) = match direction {
-//        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
-//        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
-//        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
-//        SlopeDirection::Right => (-0.25 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
-//    };
-//
-//    let face = &voxel.lid;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            front_fliped.clone()
-//        } else {
-//            front.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_z(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = &left_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            left_fliped.clone()
-//        } else {
-//            left.clone()
-//        };
-//
-//        let pos = if voxel.right.flat {
-//            pos.with_x(pos.x + 1.0)
-//        } else {
-//            pos
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = &right_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            right_fliped.clone()
-//        } else {
-//            right.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh.clone()),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    if let Some((top, top_fliped)) = top {
-//        let face = &top_face;
-//        if face.tile_id != 0 {
-//            let mesh = if face.flip {
-//                top_fliped.clone()
-//            } else {
-//                top.clone()
-//            };
-//
-//            commands.spawn((
-//                Mesh3d(mesh),
-//                MeshMaterial3d(
-//                    map_materials
-//                        .index
-//                        .get(&face.tile_id)
-//                        .cloned()
-//                        .unwrap_or(unknown_tile_color.clone()),
-//                ),
-//                Transform::from_translation(pos)
-//                    .with_rotation(Quat::from_rotation_y(compute_rotation(
-//                        face.rotate,
-//                        face.flip,
-//                    )))
-//                    .with_rotation(Quat::from_rotation_z(angle)),
-//                //MapPos(i),
-//            ));
-//            //.observe(on_click_show_debug);
-//        }
-//    }
-//}
-//
-//fn spawn_degree_45_block(
-//    pos: Vec3,
-//    slope_direction: &SlopeDirection,
-//    commands: &mut Commands,
-//    voxel: &BlockInfo,
-//    block_gltf: &Gltf,
-//    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-//    map_materials: &Res<TextureIndex>,
-//    unknown_tile_color: &Handle<StandardMaterial>,
-//) {
-//    let get_mesh = |name| {
-//        let handle = block_gltf.named_meshes[name].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//
-//    // setup faces meshs
-//    let front = get_mesh("degree_45.lid");
-//    let front_fliped = get_mesh("degree_45.lid.flip");
-//
-//    let left = get_mesh("degree_45.left");
-//    let left_fliped = get_mesh("degree_45.left.flip");
-//
-//    let right = get_mesh("degree_45.right");
-//    let right_fliped = get_mesh("degree_45.right.flip");
-//
-//    let top = get_mesh("block.top");
-//    let top_fliped = get_mesh("block.top.flip");
-//
-//    let (angle, left_face, right_face, top_face) = match slope_direction {
-//        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
-//        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
-//        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
-//        SlopeDirection::Right => (-0.25 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
-//    };
-//
-//    let face = &voxel.lid;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            front_fliped.clone()
-//        } else {
-//            front.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_z(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = &left_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            left_fliped.clone()
-//        } else {
-//            left.clone()
-//        };
-//
-//        let pos = if voxel.right.flat {
-//            pos.with_x(pos.x + 1.0)
-//        } else {
-//            pos
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = &right_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            right_fliped.clone()
-//        } else {
-//            right.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh.clone()),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = &top_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            top_fliped.clone()
-//        } else {
-//            top.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&face.tile_id)
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_y(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    //let face = &voxel.bottom;
-//    //if bottom_material_id != 0 {
-//    //    let mesh = if face.flip {
-//    //        bottom_fliped.clone()
-//    //    } else {
-//    //        bottom.clone()
-//    //    };
-//
-//    //    commands.spawn((
-//    //        Mesh3d(mesh),
-//    //        MeshMaterial3d(
-//    //            map_materials
-//    //                .index
-//    //                .get(&bottom_material_id)
-//    //                .cloned()
-//    //                .unwrap_or(unknown_tile_color.clone()),
-//    //        ),
-//    //        Transform::from_translation(pos)
-//    //            .with_rotation(Quat::from_rotation_y(compute_rotation(
-//    //                face.rotate,
-//    //                face.flip,
-//    //            )))
-//    //            .with_rotation(Quat::from_rotation_z(angle)),
-//    //        //MapPos(i),
-//    //    ));
-//    //    //.observe(on_click_show_debug);
-//    //}
-//}
-//
-//fn spawn_3_sided_diagonal_block(
-//    pos: Vec3,
-//    diagonal_type: &DiagonalType,
-//    commands: &mut Commands,
-//    voxel: &BlockInfo,
-//    block_gltf: &Gltf,
-//    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-//    map_materials: &Res<TextureIndex>,
-//    unknown_tile_color: &Handle<StandardMaterial>,
-//) {
-//    const THREE_SIDED_LID_TILE_ID: usize = 1023;
-//
-//    // current workaround it's 4-sided
-//    if voxel.lid.tile_id != THREE_SIDED_LID_TILE_ID {
-//        spawn_4_sided_diagonal_block(
-//            pos,
-//            diagonal_type,
-//            commands,
-//            voxel,
-//            block_gltf,
-//            assets_gltfmesh,
-//            map_materials,
-//            unknown_tile_color,
-//        );
-//        return;
-//    }
-//
-//    let get_mesh = |name| {
-//        let handle = block_gltf.named_meshes[name].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//
-//    // setup faces meshs
-//    let front = get_mesh("3_sided.lid");
-//    let front_fliped = get_mesh("3_sided.lid");
-//
-//    //let left = get_mesh("diagonal.front");
-//    //let left_fliped = get_mesh("diagonal.front.flip");
-//
-//    let right = get_mesh("3_sided.right");
-//    let right_fliped = get_mesh("3_sided.right");
-//
-//    let top = get_mesh("3_sided.top");
-//    let top_fliped = get_mesh("3_sided.top");
-//
-//    //let bottom = get_mesh("block.bottom");
-//    //let bottom_fliped = get_mesh("block.bottom.flip");
-//
-//    let (angle, front_face, top_face, right_face) = match diagonal_type {
-//        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
-//        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
-//        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
-//        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
-//    };
-//
-//    let face = front_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            front_fliped.clone()
-//        } else {
-//            front.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_z(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    //let face = &voxel.left;
-//    //if face.tile_id != 0 {
-//    //    let mesh = if face.flip {
-//    //        left_fliped.clone()
-//    //    } else {
-//    //        left.clone()
-//    //    };
-//
-//    //    let pos = if voxel.right.flat {
-//    //        pos.with_x(pos.x + 1.0)
-//    //    } else {
-//    //        pos
-//    //    };
-//
-//    //    commands.spawn((
-//    //        Mesh3d(mesh),
-//    //        MeshMaterial3d(
-//    //            map_materials
-//    //                .index
-//    //                .get(&(face.tile_id))
-//    //                .cloned()
-//    //                .unwrap_or(unknown_tile_color.clone()),
-//    //        ),
-//    //        Transform::from_translation(pos)
-//    //            .with_rotation(Quat::from_rotation_x(compute_rotation(
-//    //                face.rotate,
-//    //                face.flip,
-//    //            )))
-//    //            .with_rotation(Quat::from_rotation_z(angle)),
-//    //        //MapPos(i),
-//    //    ));
-//    //    //.observe(on_click_show_debug);
-//    //}
-//
-//    let face = right_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            right_fliped.clone()
-//        } else {
-//            right.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh.clone()),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = top_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            top_fliped.clone()
-//        } else {
-//            top.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_y(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    //let face = &voxel.bottom;
-//    //if face.tile_id != 0 {
-//    //    let mesh = if face.flip {
-//    //        bottom_fliped.clone()
-//    //    } else {
-//    //        bottom.clone()
-//    //    };
-//
-//    //    commands.spawn((
-//    //        Mesh3d(mesh),
-//    //        MeshMaterial3d(
-//    //            map_materials
-//    //                .index
-//    //                .get(&(face.tile_id))
-//    //                .cloned()
-//    //                .unwrap_or(unknown_tile_color.clone()),
-//    //        ),
-//    //        Transform::from_translation(pos)
-//    //            .with_rotation(Quat::from_rotation_y(compute_rotation(
-//    //                face.rotate,
-//    //                face.flip,
-//    //            )))
-//    //            .with_rotation(Quat::from_rotation_z(angle)),
-//    //        //MapPos(i),
-//    //    ));
-//    //    //.observe(on_click_show_debug);
-//    //}
-//}
-//
-//fn spawn_4_sided_diagonal_block(
-//    pos: Vec3,
-//    diagonal_type: &DiagonalType,
-//    commands: &mut Commands,
-//    voxel: &BlockInfo,
-//    block_gltf: &Gltf,
-//    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-//    map_materials: &Res<TextureIndex>,
-//    unknown_tile_color: &Handle<StandardMaterial>,
-//) {
-//    let get_mesh = |name| {
-//        let handle = block_gltf.named_meshes[name].clone();
-//        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-//    };
-//
-//    // setup faces meshs
-//    let front = get_mesh("4_sided.lid");
-//    let front_fliped = get_mesh("4_sided.lid");
-//
-//    let left = get_mesh("4_sided.left");
-//    let left_fliped = get_mesh("4_sided.left");
-//
-//    let right = get_mesh("block.right");
-//    let right_fliped = get_mesh("block.right");
-//
-//    let top = get_mesh("block.top");
-//    let top_fliped = get_mesh("block.top");
-//
-//    //let bottom = get_mesh("block.bottom");
-//    //let bottom_fliped = get_mesh("block.bottom.flip");
-//
-//    let (angle, front_face, left_face, top_face, right_face) = match diagonal_type {
-//        DiagonalType::UpRight => (
-//            -0.5 * TAU,
-//            &voxel.lid,
-//            &voxel.right,
-//            &voxel.bottom,
-//            &voxel.left,
-//        ),
-//        DiagonalType::UpLeft => (
-//            -0.25 * TAU,
-//            &voxel.lid,
-//            &voxel.left,
-//            &voxel.right,
-//            &voxel.bottom,
-//        ),
-//        DiagonalType::DownLeft => (0.0, &voxel.lid, &voxel.left, &voxel.top, &voxel.right),
-//        DiagonalType::DownRight => (
-//            0.25 * TAU,
-//            &voxel.lid,
-//            &voxel.right,
-//            &voxel.left,
-//            &voxel.top,
-//        ),
-//    };
-//
-//    let face = front_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            front_fliped.clone()
-//        } else {
-//            front.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_z(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = left_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            left_fliped.clone()
-//        } else {
-//            left.clone()
-//        };
-//
-//        let pos = if voxel.right.flat {
-//            pos.with_x(pos.x + 1.0)
-//        } else {
-//            pos
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = right_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            right_fliped.clone()
-//        } else {
-//            right.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh.clone()),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_x(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    let face = top_face;
-//    if face.tile_id != 0 {
-//        let mesh = if face.flip {
-//            top_fliped.clone()
-//        } else {
-//            top.clone()
-//        };
-//
-//        commands.spawn((
-//            Mesh3d(mesh),
-//            MeshMaterial3d(
-//                map_materials
-//                    .index
-//                    .get(&(face.tile_id))
-//                    .cloned()
-//                    .unwrap_or(unknown_tile_color.clone()),
-//            ),
-//            Transform::from_translation(pos)
-//                .with_rotation(Quat::from_rotation_y(compute_rotation(
-//                    face.rotate,
-//                    face.flip,
-//                )))
-//                .with_rotation(Quat::from_rotation_z(angle)),
-//            //MapPos(i),
-//        ));
-//        //.observe(on_click_show_debug);
-//    }
-//
-//    //let face = &voxel.bottom;
-//    //if face.tile_id != 0 {
-//    //    let mesh = if face.flip {
-//    //        bottom_fliped.clone()
-//    //    } else {
-//    //        bottom.clone()
-//    //    };
-//
-//    //    commands.spawn((
-//    //        Mesh3d(mesh),
-//    //        MeshMaterial3d(
-//    //            map_materials
-//    //                .index
-//    //                .get(&(face.tile_id))
-//    //                .cloned()
-//    //                .unwrap_or(unknown_tile_color.clone()),
-//    //        ),
-//    //        Transform::from_translation(pos)
-//    //            .with_rotation(Quat::from_rotation_y(compute_rotation(
-//    //                face.rotate,
-//    //                face.flip,
-//    //            )))
-//    //            .with_rotation(Quat::from_rotation_z(angle)),
-//    //        //MapPos(i),
-//    //    ));
-//    //    //.observe(on_click_show_debug);
-//    //}
-//}
+fn spawn_diagonal_block(
+    position: Vec3,
+    voxel: &BlockInfo,
+    diagonal_type: &DiagonalType,
+    commands: &mut Commands,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) {
+    let get_mesh = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+
+        let rotation = if flip {
+            rotation.clockwise_rad() - angle
+        } else {
+            rotation.clockwise_rad() + angle
+        };
+
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    // setup faces meshs
+    let lid = get_mesh("diagonal.lid");
+    let left = get_mesh("diagonal.front");
+    let right = get_mesh("block.right");
+    let top = get_mesh("block.top");
+
+    let (angle, left_face, top_face, right_face) = match diagonal_type {
+        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
+        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
+        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
+        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
+    };
+
+    let block_builder = BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
+        bottom: None,
+        position,
+        rotation: Some(angle),
+    };
+
+    commands.queue(block_builder);
+}
+
+fn spawn_degree_26_block(
+    position: Vec3,
+    direction: &SlopeDirection,
+    level: &file::SlopeLevel,
+    voxel: &BlockInfo,
+    commands: &mut Commands,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) {
+    let level_name = match level {
+        SlopeLevel::Low => "low",
+        SlopeLevel::High => "high",
+    };
+
+    let base_name = format!("slope_2.{level_name}");
+    let get_mesh = |name| {
+        let name = format!("{base_name}.{name}");
+        let handle = block_gltf.named_meshes[name.as_str()].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+    let get_mesh_1 = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+
+        let rotation = if flip {
+            rotation.clockwise_rad() - angle
+        } else {
+            rotation.clockwise_rad() + angle
+        };
+
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    // setup faces meshs
+    let lid = get_mesh("lid");
+    let left = get_mesh("left");
+    let right = get_mesh("right");
+    let top = if matches!(level, file::SlopeLevel::High) {
+        Some(get_mesh_1("block.top"))
+    } else {
+        None
+    };
+
+    let (angle, left_face, right_face, top_face) = match direction {
+        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
+        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
+        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
+        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
+    };
+
+    let block_builder = BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
+        top: top.and_then(|top| {
+            spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle)
+        }),
+        bottom: None,
+        position,
+        rotation: Some(angle),
+    };
+
+    commands.queue(block_builder);
+}
+
+fn spawn_degree_45_block(
+    position: Vec3,
+    direction: &SlopeDirection,
+    voxel: &BlockInfo,
+    commands: &mut Commands,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) {
+    let get_mesh = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+
+        let rotation = if flip {
+            rotation.clockwise_rad() - angle
+        } else {
+            rotation.clockwise_rad() + angle
+        };
+
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    // setup faces meshs
+    let lid = get_mesh("degree_45.lid");
+    let left = get_mesh("degree_45.left");
+    let right = get_mesh("degree_45.right");
+    let top = get_mesh("block.top");
+
+    let (angle, left_face, right_face, top_face) = match direction {
+        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
+        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
+        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
+        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
+    };
+
+    let block_builder = BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
+        bottom: None,
+        position,
+        rotation: Some(angle),
+    };
+
+    commands.queue(block_builder);
+}
+
+fn spawn_3_sided_diagonal_block(
+    position: Vec3,
+    diagonal_type: &DiagonalType,
+    voxel: &BlockInfo,
+    commands: &mut Commands,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) {
+    const THREE_SIDED_LID_TILE_ID: usize = 1023;
+
+    // current workaround it's 4-sided
+    if voxel.lid.tile_id != THREE_SIDED_LID_TILE_ID {
+        spawn_4_sided_diagonal_block(
+            position,
+            diagonal_type,
+            voxel,
+            commands,
+            block_gltf,
+            assets_gltfmesh,
+            textures,
+            ext_materials,
+        );
+        return;
+    }
+
+    let get_mesh = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation.clockwise_rad()),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let lid = get_mesh("3_sided.lid");
+    let right = get_mesh("3_sided.right");
+    let top = get_mesh("3_sided.top");
+
+    let (angle, left_face, top_face, right_face) = match diagonal_type {
+        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
+        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
+        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
+        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
+    };
+
+    let block_builder = BlockBuilder {
+        lid: None,
+        left: spawn_face_maybe(lid.clone(), FaceInfo::Normal(left_face.clone()), angle),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
+        bottom: None,
+        position,
+        rotation: Some(angle),
+    };
+
+    commands.queue(block_builder);
+}
+
+fn spawn_4_sided_diagonal_block(
+    position: Vec3,
+    diagonal_type: &DiagonalType,
+    voxel: &BlockInfo,
+    commands: &mut Commands,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) {
+    let get_mesh = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+        let (tile_id, flip, rotation) = match face {
+            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+        };
+
+        if tile_id == 0 {
+            return None;
+        }
+
+        let base_color_texture = textures.index.get(&tile_id).cloned();
+
+        let rotation = if flip {
+            rotation.clockwise_rad() - angle
+        } else {
+            rotation.clockwise_rad() + angle
+        };
+
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture,
+                alpha_mode: AlphaMode::AlphaToCoverage,
+                ..default()
+            },
+            extension: MyExtension::new(flip, rotation),
+        });
+
+        Some(BlockFace {
+            mesh: Mesh3d(mesh),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let lid = get_mesh("4_sided.lid");
+    let left = get_mesh("4_sided.left");
+    let right = get_mesh("block.right");
+    let top = get_mesh("block.top");
+
+    let (angle, lid_face, left_face, top_face, right_face) = match diagonal_type {
+        DiagonalType::UpRight => (
+            -0.5 * TAU,
+            &voxel.lid,
+            &voxel.right,
+            &voxel.bottom,
+            &voxel.left,
+        ),
+        DiagonalType::UpLeft => (
+            -0.25 * TAU,
+            &voxel.lid,
+            &voxel.left,
+            &voxel.right,
+            &voxel.bottom,
+        ),
+        DiagonalType::DownLeft => (0.0, &voxel.lid, &voxel.left, &voxel.top, &voxel.right),
+        DiagonalType::DownRight => (
+            0.25 * TAU,
+            &voxel.lid,
+            &voxel.right,
+            &voxel.left,
+            &voxel.top,
+        ),
+    };
+
+    let block_builder = BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(lid_face.clone()), angle),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), 0.0),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), 0.0),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), 0.0),
+        bottom: None,
+        position,
+        rotation: Some(angle),
+    };
+
+    commands.queue(block_builder);
+}
 
 fn compute_rotation(rotate: Rotate, flip: bool) -> f32 {
     let angle = match rotate {

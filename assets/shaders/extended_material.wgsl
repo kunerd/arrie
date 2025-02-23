@@ -44,7 +44,7 @@ fn fragment(
     }
     
     uvs -= 0.5;
-    uvs *= rotate2D(material.angle);
+    uvs *= rotate2D(material.angle - TAU);
     uvs += 0.5;
 
     var modified_input = in;
