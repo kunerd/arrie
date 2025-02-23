@@ -37,6 +37,7 @@ pub fn plugin(app: &mut App) {
         .add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, MyExtension>,
         >::default())
+        .add_plugins(MeshPickingPlugin)
         .init_asset::<MapFileAsset>()
         .init_asset_loader::<MapFileAssetLoader>()
         .init_asset::<StyleFileAsset>()
@@ -325,22 +326,16 @@ fn spawn_normal_block(
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
 ) {
-    let get_mesh = |name: &str, fliped| {
-        let name = if fliped {
-            format!("{name}.flip")
-        } else {
-            name.to_string()
-        };
-        let handle = block_gltf.named_meshes[name.as_str()].clone();
+    let get_mesh = |name: &str| {
+        let handle = block_gltf.named_meshes[name].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
     };
 
-    // setup faces meshs
-    let lid = get_mesh("block.lid", voxel.lid.flip);
-    let left = get_mesh("block.left", voxel.left.flip);
-    let right = get_mesh("block.right", voxel.right.flip);
-    let top = get_mesh("block.top", voxel.top.flip);
-    let bottom = get_mesh("block.bottom", voxel.bottom.flip);
+    let lid = get_mesh("block.lid");
+    let left = get_mesh("block.left");
+    let right = get_mesh("block.right");
+    let top = get_mesh("block.top");
+    let bottom = get_mesh("block.bottom");
 
     let face = &voxel.lid;
     if face.tile_id != 0 {
@@ -1511,7 +1506,6 @@ enum FaceInfo {
 fn add_debug_observer(mut commands: Commands, faces: Query<(Entity, Ref<FaceInfo>)>) {
     for (entity, info) in &faces {
         if info.is_added() {
-            dbg!("Spawn observer");
             commands.entity(entity).observe(on_click_show_debug);
         }
     }
@@ -1557,7 +1551,6 @@ fn on_click_show_debug(
     faces: Query<&FaceInfo>,
     mut query: Query<&mut TextSpan, With<FaceDebugText>>,
 ) {
-    dbg!("on click");
     let Ok(face) = faces.get(click.entity()) else {
         return;
     };

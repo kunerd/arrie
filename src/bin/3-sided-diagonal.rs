@@ -1,4 +1,4 @@
-use std::thread::spawn;
+use std::{f32::consts::TAU, thread::spawn};
 
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, OpaqueRendererMethod},
@@ -51,8 +51,8 @@ fn load_scene(
         base: material,
         extension: MyExtension {
             holder: MyExtensionHolder {
-                flip: 1,
-                angle: 0.25,
+                flip: 0,
+                angle: 0.25 * TAU,
             },
         },
     });

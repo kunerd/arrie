@@ -39,15 +39,13 @@ fn fragment(
 ) -> FragmentOutput {
     var uvs = in.uv;
 
-    if material.angle >= 0.0 {
-    	uvs -= 0.5;
-    	uvs *= rotate2D(-material.angle);
-    	uvs += 0.5;
-    }
-
     if material.flip == 1 {
-	uvs.y = 1.0 - uvs.y;
+        uvs.x = 1.0 - uvs.x;
     }
+    
+    uvs -= 0.5;
+    uvs *= rotate2D(material.angle);
+    uvs += 0.5;
 
     var modified_input = in;
     modified_input.uv = uvs;
