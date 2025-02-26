@@ -16,7 +16,7 @@ use bevy::{
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
     utils::HashMap,
 };
-use file::{BlockInfo, DiagonalType, Rotate, SlopeDirection, SlopeLevel, SlopeType};
+use file::{BlockInfo, DiagonalType, SlopeDirection, SlopeLevel, SlopeType};
 pub use loader::{MapFileAsset, MapFileAssetLoader, MapFileAssetLoaderError};
 use wgpu::{TextureDimension, TextureFormat};
 
@@ -237,73 +237,91 @@ fn spawn_blocks(
         return;
     };
 
-    //let marker_color = materials.add(Color::srgb(1.0, 0.0, 0.0));
-    //let unknown_tile_color = materials.add(Color::srgba_u8(0, 255, 128, 255));
-
     for (entity, block) in &mut blocks {
         let pos = block.pos;
         let voxel = &block.info;
 
         commands.entity(entity).despawn();
 
-        match &voxel.slope_type {
-            SlopeType::None => spawn_normal_block(
+        let builder = match &voxel.slope_type {
+            SlopeType::None => Some(spawn_normal_block(
                 pos,
-                &mut commands,
                 voxel,
                 block_gltf,
                 &assets_gltfmesh,
                 &textures,
                 &mut ext_materials,
-            ),
-            SlopeType::Diagonal(diagonal_type) => spawn_diagonal_block(
+            )),
+            SlopeType::Diagonal(diagonal_type) => Some(spawn_diagonal_block(
                 pos,
                 voxel,
                 diagonal_type,
-                &mut commands,
                 block_gltf,
                 &assets_gltfmesh,
                 &textures,
                 &mut ext_materials,
-            ),
-            SlopeType::ThreeSidedDiagonal(diagonal_type) => spawn_3_sided_diagonal_block(
+            )),
+            SlopeType::ThreeSidedDiagonal(diagonal_type) => Some(spawn_3_sided_diagonal_block(
                 pos,
                 diagonal_type,
                 voxel,
-                &mut commands,
                 block_gltf,
                 &assets_gltfmesh,
                 &textures,
                 &mut ext_materials,
-            ),
-            SlopeType::Degree26 { direction, level } => spawn_degree_26_block(
+            )),
+            SlopeType::Degree26 { direction, level } => Some(spawn_degree_26_block(
                 pos,
                 direction,
                 level,
                 voxel,
-                &mut commands,
                 block_gltf,
                 &assets_gltfmesh,
                 &textures,
                 &mut ext_materials,
-            ),
-            SlopeType::Degree45(slope_direction) => spawn_degree_45_block(
+            )),
+            SlopeType::Degree45(slope_direction) => Some(spawn_degree_45_block(
                 pos,
                 slope_direction,
                 voxel,
-                &mut commands,
                 block_gltf,
                 &assets_gltfmesh,
                 &textures,
                 &mut ext_materials,
-            ),
-            _ => {} //SlopeType::Degree7 { direction, level \} => todo!(),
-                    //SlopeType::FourSidedDiagonal(diagonal_type) => todo!(),
-                    //SlopeType::PartialBlock => todo!(),
-                    //SlopeType::PartialCornerBlock => todo!(),
-                    //SlopeType::Ignore => todo!(),
+            )),
+            _ => None, //SlopeType::Degree7 { direction, level \} => todo!(),
+                       //SlopeType::PartialBlock => todo!(),
+                       //SlopeType::PartialCornerBlock => todo!(),
+                       //SlopeType::Ignore => todo!(),
+        };
+
+        let Some(mut builder) = builder else {
+            continue;
+        };
+
+        match (voxel.left.flat, voxel.right.flat) {
+            (true, true) => builder.left_right = Flatness::Both,
+            (true, false) => builder.left_right = Flatness::Left,
+            (false, true) => builder.left_right = Flatness::Right,
+            (false, false) => builder.left_right = Flatness::None,
         }
+
+        match (voxel.top.flat, voxel.bottom.flat) {
+            (true, true) => builder.top_bottom = Flatness::Both,
+            (true, false) => builder.top_bottom = Flatness::Left,
+            (false, true) => builder.top_bottom = Flatness::Right,
+            (false, false) => builder.top_bottom = Flatness::None,
+        }
+
+        commands.queue(builder);
     }
+}
+
+enum Flatness {
+    None,
+    Left,
+    Right,
+    Both,
 }
 
 struct BlockBuilder {
@@ -312,6 +330,8 @@ struct BlockBuilder {
     right: Option<BlockFace>,
     top: Option<BlockFace>,
     bottom: Option<BlockFace>,
+    left_right: Flatness,
+    top_bottom: Flatness,
     position: Vec3,
     rotation: Option<f32>,
 }
@@ -327,17 +347,96 @@ impl Command for BlockBuilder {
         world
             .spawn((Block, Visibility::Visible, transform))
             .with_children(|parent| {
-                let mut spawn_child_maybe = |maybe_child| {
+                let spawn_child_maybe = |parent: &mut WorldChildBuilder, maybe_child| {
                     if let Some(child) = maybe_child {
                         parent.spawn(child);
                     }
                 };
 
-                spawn_child_maybe(self.lid);
-                spawn_child_maybe(self.left);
-                spawn_child_maybe(self.right);
-                spawn_child_maybe(self.top);
-                spawn_child_maybe(self.bottom);
+                spawn_child_maybe(parent, self.lid);
+                match self.left_right {
+                    Flatness::Left => {
+                        if let Some(right) = self.right {
+                            parent.spawn((
+                                right,
+                                Transform::from_translation(Vec3::new(-1.0, 0.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.left);
+                    }
+                    Flatness::Right => {
+                        if let Some(left) = self.left {
+                            parent.spawn((
+                                left,
+                                Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.right);
+                    }
+                    Flatness::Both => {
+                        if let Some(right) = self.right.clone() {
+                            parent.spawn((
+                                right,
+                                Transform::from_translation(Vec3::new(-1.0, 0.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.left.clone());
+
+                        if let Some(left) = self.left {
+                            parent.spawn((
+                                left,
+                                Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.right);
+                    }
+                    Flatness::None => {
+                        spawn_child_maybe(parent, self.left);
+                        spawn_child_maybe(parent, self.right);
+                    }
+                }
+
+                match self.top_bottom {
+                    Flatness::Left => {
+                        if let Some(bottom) = self.bottom {
+                            parent.spawn((
+                                bottom,
+                                Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.top);
+                    }
+                    Flatness::Right => {
+                        if let Some(top) = self.top {
+                            parent.spawn((
+                                top,
+                                Transform::from_translation(Vec3::new(0.0, -1.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.bottom);
+                    }
+                    Flatness::Both => {
+                        if let Some(bottom) = self.bottom.clone() {
+                            parent.spawn((
+                                bottom,
+                                Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.top.clone());
+
+                        if let Some(top) = self.top {
+                            parent.spawn((
+                                top,
+                                Transform::from_translation(Vec3::new(0.0, -1.0, 0.0)),
+                            ));
+                        }
+                        spawn_child_maybe(parent, self.bottom);
+                    }
+                    Flatness::None => {
+                        spawn_child_maybe(parent, self.top);
+                        spawn_child_maybe(parent, self.bottom);
+                    }
+                }
             });
     }
 }
@@ -345,7 +444,7 @@ impl Command for BlockBuilder {
 #[derive(Component)]
 struct Block;
 
-#[derive(Bundle)]
+#[derive(Bundle, Clone)]
 struct BlockFace {
     mesh: Mesh3d,
     material: MeshMaterial3d<ExtendedMaterial<StandardMaterial, MyExtension>>,
@@ -353,13 +452,12 @@ struct BlockFace {
 
 fn spawn_normal_block(
     position: Vec3,
-    commands: &mut Commands,
     voxel: &BlockInfo,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     let get_mesh = |name: &str| {
         let handle = block_gltf.named_meshes[name].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
@@ -397,29 +495,28 @@ fn spawn_normal_block(
     let top = get_mesh("block.top");
     let bottom = get_mesh("block.bottom");
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone())),
         left: spawn_face_maybe(left.clone(), FaceInfo::Normal(voxel.left.clone())),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(voxel.right.clone())),
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(voxel.top.clone())),
         bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(voxel.bottom.clone())),
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: None,
-    };
-
-    commands.queue(block_builder);
+    }
 }
 
 fn spawn_diagonal_block(
     position: Vec3,
     voxel: &BlockInfo,
     diagonal_type: &DiagonalType,
-    commands: &mut Commands,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     let get_mesh = |name| {
         let handle = block_gltf.named_meshes[name].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
@@ -471,17 +568,17 @@ fn spawn_diagonal_block(
         DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
     };
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
         left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
         bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: Some(angle),
-    };
-
-    commands.queue(block_builder);
+    }
 }
 
 fn spawn_degree_26_block(
@@ -489,12 +586,11 @@ fn spawn_degree_26_block(
     direction: &SlopeDirection,
     level: &file::SlopeLevel,
     voxel: &BlockInfo,
-    commands: &mut Commands,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     let level_name = match level {
         SlopeLevel::Low => "low",
         SlopeLevel::High => "high",
@@ -561,7 +657,7 @@ fn spawn_degree_26_block(
         SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
     };
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
         left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
@@ -569,23 +665,22 @@ fn spawn_degree_26_block(
             spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle)
         }),
         bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: Some(angle),
-    };
-
-    commands.queue(block_builder);
+    }
 }
 
 fn spawn_degree_45_block(
     position: Vec3,
     direction: &SlopeDirection,
     voxel: &BlockInfo,
-    commands: &mut Commands,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     let get_mesh = |name| {
         let handle = block_gltf.named_meshes[name].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
@@ -637,44 +732,41 @@ fn spawn_degree_45_block(
         SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
     };
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
         left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
         bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: Some(angle),
-    };
-
-    commands.queue(block_builder);
+    }
 }
 
 fn spawn_3_sided_diagonal_block(
     position: Vec3,
     diagonal_type: &DiagonalType,
     voxel: &BlockInfo,
-    commands: &mut Commands,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     const THREE_SIDED_LID_TILE_ID: usize = 1023;
 
     // current workaround it's 4-sided
     if voxel.lid.tile_id != THREE_SIDED_LID_TILE_ID {
-        spawn_4_sided_diagonal_block(
+        return spawn_4_sided_diagonal_block(
             position,
             diagonal_type,
             voxel,
-            commands,
             block_gltf,
             assets_gltfmesh,
             textures,
             ext_materials,
         );
-        return;
     }
 
     let get_mesh = |name| {
@@ -682,7 +774,7 @@ fn spawn_3_sided_diagonal_block(
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
     };
 
-    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, _angle| -> Option<BlockFace> {
         let (tile_id, flip, rotation) = match face {
             FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
             FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
@@ -720,29 +812,28 @@ fn spawn_3_sided_diagonal_block(
         DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
     };
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: None,
         left: spawn_face_maybe(lid.clone(), FaceInfo::Normal(left_face.clone()), angle),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
         bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: Some(angle),
-    };
-
-    commands.queue(block_builder);
+    }
 }
 
 fn spawn_4_sided_diagonal_block(
     position: Vec3,
     diagonal_type: &DiagonalType,
     voxel: &BlockInfo,
-    commands: &mut Commands,
     block_gltf: &Gltf,
     assets_gltfmesh: &Res<Assets<GltfMesh>>,
     textures: &Res<TextureIndex>,
     ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) {
+) -> BlockBuilder {
     let get_mesh = |name| {
         let handle = block_gltf.named_meshes[name].clone();
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
@@ -811,41 +902,17 @@ fn spawn_4_sided_diagonal_block(
         ),
     };
 
-    let block_builder = BlockBuilder {
+    BlockBuilder {
         lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(lid_face.clone()), angle),
         left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), 0.0),
         right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), 0.0),
         top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), 0.0),
         bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
         position,
         rotation: Some(angle),
-    };
-
-    commands.queue(block_builder);
-}
-
-fn compute_rotation(rotate: Rotate, flip: bool) -> f32 {
-    let angle = match rotate {
-        Rotate::Degree0 => 0.0,
-        Rotate::Degree90 => {
-            if flip {
-                TAU * 0.75
-            } else {
-                TAU * 0.25
-            }
-        }
-        Rotate::Degree180 => TAU * 0.5,
-        Rotate::Degree270 => {
-            if flip {
-                TAU * 0.25
-            } else {
-                TAU * 0.75
-            }
-        }
-    };
-
-    // rotate clock-wise
-    -angle
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
@@ -856,9 +923,6 @@ enum MapState {
     SetupMap,
     Loaded,
 }
-
-#[derive(Component, Debug)]
-struct MapPos(usize);
 
 #[derive(Resource, Debug)]
 pub struct Map {
