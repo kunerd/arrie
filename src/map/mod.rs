@@ -244,7 +244,7 @@ fn spawn_blocks(
         commands.entity(entity).despawn();
 
         let builder = match &voxel.slope_type {
-            SlopeType::None | SlopeType::SlopeAbove=> Some(spawn_normal_block(
+            SlopeType::None | SlopeType::SlopeAbove => Some(spawn_normal_block(
                 pos,
                 voxel,
                 block_gltf,
@@ -637,7 +637,7 @@ fn spawn_diagonal_block(
         &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
     };
 
-    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
+    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
         let (tile_id, flip, rotation) = match face {
             FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
             FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
@@ -649,6 +649,7 @@ fn spawn_diagonal_block(
 
         let base_color_texture = textures.index.get(&tile_id).cloned();
 
+        let angle = angle.unwrap_or(0.0);
         let rotation = if flip {
             rotation.clockwise_rad() - angle
         } else {
@@ -684,10 +685,10 @@ fn spawn_diagonal_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), angle),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), angle),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
