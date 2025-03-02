@@ -2,6 +2,7 @@ extern crate byteorder;
 
 mod camera;
 mod dev_tools;
+mod light;
 pub mod map;
 mod style;
 mod window;
@@ -24,7 +25,7 @@ pub struct Arrie;
 
 impl Plugin for Arrie {
     fn build(&self, app: &mut App) {
-        app.add_plugins((window::plugin, camera::plugin, map::plugin));
+        app.add_plugins((window::plugin, camera::plugin, map::plugin, light::plugin));
 
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::plugin);
