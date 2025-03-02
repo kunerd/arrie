@@ -772,8 +772,8 @@ fn spawn_degree_26_block(
     let (angle, left_face, right_face, top_face) = match direction {
         SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
         SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
-        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
-        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
+        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.left),
+        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.right),
     };
 
     BlockBuilder {
