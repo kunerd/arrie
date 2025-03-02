@@ -147,7 +147,7 @@ pub enum SlopeType {
     Diagonal(DiagonalType),
     ThreeSidedDiagonal(DiagonalType),
     FourSidedDiagonal(DiagonalType),
-    PartialBlock,
+    PartialBlock(PartialPosition),
     PartialCornerBlock,
     Ignore,
 }
@@ -172,6 +172,14 @@ pub enum DiagonalType {
     UpRight,
     DownLeft,
     DownRight,
+}
+
+#[derive(Debug, Clone)]
+pub enum PartialPosition {
+    Left,
+    Right,
+    Top,
+    Bottom,
 }
 
 impl From<u8> for SlopeType {
@@ -224,6 +232,14 @@ impl From<u8> for SlopeType {
             50 => Self::ThreeSidedDiagonal(DiagonalType::UpRight),
             51 => Self::ThreeSidedDiagonal(DiagonalType::DownLeft),
             52 => Self::ThreeSidedDiagonal(DiagonalType::DownRight),
+            53 => Self::PartialBlock(PartialPosition::Left),
+            54 => Self::PartialBlock(PartialPosition::Right),
+            55 => Self::PartialBlock(PartialPosition::Top),
+            56 => Self::PartialBlock(PartialPosition::Bottom),
+            //57 => Self::PartialBlock(PartialPosition::TopLeft),
+            //58 => Self::PartialBlock(PartialPosition::TopRight),
+            //59 => Self::PartialBlock(PartialPosition::BottomRight),
+            //60 => Self::PartialBlock(PartialPosition::BottomLeft),
             _ => SlopeType::Ignore,
         }
     }
