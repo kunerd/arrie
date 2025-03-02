@@ -149,6 +149,7 @@ pub enum SlopeType {
     FourSidedDiagonal(DiagonalType),
     PartialBlock(PartialPosition),
     PartialCornerBlock,
+    SlopeAbove,
     Ignore,
 }
 
@@ -240,6 +241,7 @@ impl From<u8> for SlopeType {
             //58 => Self::PartialBlock(PartialPosition::TopRight),
             //59 => Self::PartialBlock(PartialPosition::BottomRight),
             //60 => Self::PartialBlock(PartialPosition::BottomLeft),
+            63 => SlopeType::SlopeAbove,
             _ => SlopeType::Ignore,
         }
     }

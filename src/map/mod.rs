@@ -244,7 +244,7 @@ fn spawn_blocks(
         commands.entity(entity).despawn();
 
         let builder = match &voxel.slope_type {
-            SlopeType::None => Some(spawn_normal_block(
+            SlopeType::None | SlopeType::SlopeAbove=> Some(spawn_normal_block(
                 pos,
                 voxel,
                 block_gltf,
