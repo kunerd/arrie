@@ -33,7 +33,7 @@ use crate::loader::{StyleFileAsset, StyleFileAssetLoader};
 pub fn plugin(app: &mut App) {
     let game_files_path = check_and_get_game_files_path();
     app.insert_resource(game_files_path)
-        .insert_resource(CurrentMap(Maps::Downtown))
+        .insert_resource(CurrentMap(Maps::Industrial))
         .add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, MyExtension>,
         >::default())
@@ -289,8 +289,16 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             )),
+            SlopeType::PartialBlock(partial_pos) => Some(create_partial_block(
+                pos,
+                voxel,
+                partial_pos,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            )),
             _ => None, //SlopeType::Degree7 { direction, level \} => todo!(),
-                       //SlopeType::PartialBlock => todo!(),
                        //SlopeType::PartialCornerBlock => todo!(),
                        //SlopeType::Ignore => todo!(),
         };
@@ -505,6 +513,113 @@ fn spawn_normal_block(
         top_bottom: Flatness::None,
         position,
         rotation: None,
+    }
+}
+
+fn create_partial_block(
+    position: Vec3,
+    voxel: &BlockInfo,
+    partial_pos: &file::PartialPosition,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) -> BlockBuilder {
+    let get_mesh = |name: &str| {
+        let name = format!("partial.{name}");
+        let handle = block_gltf.named_meshes[name.as_str()].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe =
+        |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
+            let (tile_id, flip, rotation) = match face {
+                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+            };
+
+            if tile_id == 0 {
+                return None;
+            }
+
+            let angle = angle.unwrap_or(0.0);
+            let rotation = if flip {
+                rotation.clockwise_rad() - angle
+            } else {
+                rotation.clockwise_rad() + angle
+            };
+            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let ext_material = ext_materials.add(ExtendedMaterial {
+                base: StandardMaterial {
+                    base_color_texture,
+                    alpha_mode: AlphaMode::AlphaToCoverage,
+                    ..default()
+                },
+                extension: MyExtension::new(flip, rotation),
+            });
+
+            Some(BlockFace {
+                mesh: Mesh3d(mesh),
+                material: MeshMaterial3d(ext_material),
+            })
+        };
+
+    let lid = get_mesh("lid");
+    let left = get_mesh("left");
+    let right = get_mesh("right");
+    let top = get_mesh("top");
+    let bottom = get_mesh("bottom");
+
+    const PARTIAL_POS_OFFSET: f32 = (64.0 - 24.0) / 64.0 / 2.0;
+
+    let mut position = position;
+    let (rotation, left_face, right_face, top_face, bottom_face) = match partial_pos {
+        file::PartialPosition::Left => {
+            position.x -= PARTIAL_POS_OFFSET;
+            (
+                Some(0.75 * TAU),
+                &voxel.bottom,
+                &voxel.top,
+                &voxel.right,
+                &voxel.left,
+            )
+        }
+        file::PartialPosition::Right => {
+            position.x += PARTIAL_POS_OFFSET;
+            (
+                Some(0.25 * TAU),
+                &voxel.top,
+                &voxel.bottom,
+                &voxel.left,
+                &voxel.right,
+            )
+        }
+        file::PartialPosition::Top => {
+            position.y += PARTIAL_POS_OFFSET;
+            (
+                Some(0.5 * TAU),
+                &voxel.right,
+                &voxel.left,
+                &voxel.bottom,
+                &voxel.top,
+            )
+        }
+        file::PartialPosition::Bottom => {
+            position.y -= PARTIAL_POS_OFFSET;
+            (None, &voxel.left, &voxel.right, &voxel.top, &voxel.bottom)
+        }
+    };
+
+    BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), rotation),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
+        bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(bottom_face.clone()), None),
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
+        position,
+        rotation,
     }
 }
 
@@ -968,9 +1083,9 @@ impl Display for Maps {
 impl Maps {
     fn get_base_name(&self) -> &str {
         match self {
-            Maps::Downtown => "bil",
-            Maps::Residential => "wil",
-            Maps::Industrial => "ste",
+            Maps::Downtown => "wil",
+            Maps::Residential => "ste",
+            Maps::Industrial => "bil",
         }
     }
 
