@@ -1,5 +1,9 @@
 use std::{
-    f32::consts::TAU, fs::File, io::{BufReader, Cursor, Read, Seek, SeekFrom}, path::Path, str::FromStr
+    f32::consts::TAU,
+    fs::File,
+    io::{BufReader, Cursor, Read, Seek, SeekFrom},
+    path::Path,
+    str::FromStr,
 };
 
 use byteorder::{NativeEndian, ReadBytesExt};
@@ -137,7 +141,7 @@ pub enum SlopeType {
     None,
     Degree7 {
         direction: SlopeDirection,
-        level: SlopeLevel,
+        index: u8,
     },
     Degree26 {
         direction: SlopeDirection,
@@ -219,6 +223,22 @@ impl From<u8> for SlopeType {
             8 => Self::Degree26 {
                 direction: SlopeDirection::Right,
                 level: SlopeLevel::High,
+            },
+            i @ 9..=16 => Self::Degree7 {
+                direction: SlopeDirection::Up,
+                index: i - 9,
+            },
+            i @ 17..=24 => Self::Degree7 {
+                direction: SlopeDirection::Down,
+                index: i - 17,
+            },
+            i @ 25..=32 => Self::Degree7 {
+                direction: SlopeDirection::Left,
+                index: i - 25,
+            },
+            i @ 33..=40 => Self::Degree7 {
+                direction: SlopeDirection::Right,
+                index: i - 33,
             },
             41 => Self::Degree45(SlopeDirection::Up),
             42 => Self::Degree45(SlopeDirection::Down),
