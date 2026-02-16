@@ -298,6 +298,16 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             )),
+            SlopeType::Degree7 { direction, index } => spawn_7_degree_block(
+                pos,
+                direction,
+                *index,
+                voxel,
+                block_gltf,
+                &assets_gltfmesh,
+                &textures,
+                &mut ext_materials,
+            ),
             _ => None, //SlopeType::Degree7 { direction, level \} => todo!(),
                        //SlopeType::PartialCornerBlock => todo!(),
                        //SlopeType::Ignore => todo!(),
@@ -789,6 +799,107 @@ fn spawn_degree_26_block(
         position,
         rotation: Some(angle),
     }
+}
+
+fn spawn_7_degree_block(
+    position: Vec3,
+    direction: &SlopeDirection,
+    index: u8,
+    voxel: &BlockInfo,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+) -> Option<BlockBuilder> {
+    let level_name = match index {
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        6 => "6",
+        // FIXME slopes are 8 blocks long instead of 7 stated by the docs :(
+        7 => "6",
+        _ => panic!("index out of bounds"),
+    };
+
+    let base_name = format!("slope_7.{level_name}");
+    let get_mesh = |name| {
+        let name = format!("{base_name}.{name}");
+        let handle = block_gltf.named_meshes[name.as_str()].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+    let get_mesh_1 = |name| {
+        let handle = block_gltf.named_meshes[name].clone();
+        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
+    };
+
+    let mut spawn_face_maybe =
+        |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
+            let (tile_id, flip, rotation) = match face {
+                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
+                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
+            };
+
+            if tile_id == 0 {
+                return None;
+            }
+
+            let base_color_texture = textures.index.get(&tile_id).cloned();
+
+            let angle = angle.unwrap_or(0.0);
+            let rotation = if flip {
+                rotation.clockwise_rad() - angle
+            } else {
+                rotation.clockwise_rad() + angle
+            };
+
+            let ext_material = ext_materials.add(ExtendedMaterial {
+                base: StandardMaterial {
+                    base_color_texture,
+                    alpha_mode: AlphaMode::AlphaToCoverage,
+                    ..default()
+                },
+                extension: MyExtension::new(flip, rotation),
+            });
+
+            Some(BlockFace {
+                mesh: Mesh3d(mesh),
+                material: MeshMaterial3d(ext_material),
+            })
+        };
+
+    // setup faces meshs
+    let lid = get_mesh("lid");
+    let left = get_mesh("left");
+    let right = get_mesh("right");
+    let top = if index > 0 {
+        Some(get_mesh_1("block.top"))
+    } else {
+        None
+    };
+
+    let (angle, left_face, right_face, top_face) = match direction {
+        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
+        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
+        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.left),
+        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.right),
+    };
+
+    Some(BlockBuilder {
+        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
+        top: top.and_then(|top| {
+            spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None)
+        }),
+        bottom: None,
+        left_right: Flatness::None,
+        top_bottom: Flatness::None,
+        position,
+        rotation: Some(angle),
+    })
 }
 
 fn spawn_degree_45_block(
