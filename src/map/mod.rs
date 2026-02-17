@@ -819,12 +819,11 @@ fn spawn_7_degree_block(
         4 => "4",
         5 => "5",
         6 => "6",
-        // FIXME slopes are 8 blocks long instead of 7 stated by the docs :(
-        7 => "6",
+        7 => "7",
         _ => panic!("index out of bounds"),
     };
 
-    let base_name = format!("slope_7.{level_name}");
+    let base_name = format!("slope_8.{level_name}");
     let get_mesh = |name| {
         let name = format!("{base_name}.{name}");
         let handle = block_gltf.named_meshes[name.as_str()].clone();
