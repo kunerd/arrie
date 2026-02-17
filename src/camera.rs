@@ -8,14 +8,14 @@ pub fn plugin(app: &mut App) {
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn((
-        PanOrbitCamera::default(),
-        Transform::from_xyz(10.0, 0.0, 18.0).looking_at(
-            Vec3 {
-                x: 0.0,
-                y: 0.0,
+        PanOrbitCamera {
+            focus: Vec3 {
+                x: 128.0,
+                y: 128.0,
                 z: 0.0,
             },
-            Vec3::Y,
-        ),
+            ..Default::default()
+        },
+        Transform::from_xyz(128.0, 128.0, 18.0),
     ));
 }
