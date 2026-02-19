@@ -705,6 +705,7 @@ fn create_partial_corner_block(
     let mut position = position;
 
     // FIXME: rotation doesn't work when UV flip is true
+    // FIXME: UV maps of sides are wrong in model file
     let (rotation, left_face, right_face, top_face, bottom_face) = match partial_pos {
         file::CornerPosition::TopLeft => {
             position.x -= PARTIAL_POS_OFFSET;
@@ -1167,9 +1168,10 @@ fn spawn_3_sided_diagonal_block(
     let right = get_mesh("3_sided.right");
     let top = get_mesh("3_sided.top");
 
+    // FIXME: flat not working -> example are trees
     let (angle, left_face, top_face, right_face) = match diagonal_type {
         DiagonalType::UpRight => {
-            position.x += 0.75;
+            position.x -= 0.25;
             position.y -= 0.25;
             (Some(0.5 * TAU), &voxel.right, &voxel.bottom, &voxel.left)
         }
@@ -1185,7 +1187,7 @@ fn spawn_3_sided_diagonal_block(
         }
         DiagonalType::DownRight => {
             position.x -= 0.25;
-            position.y -= 0.75;
+            position.y += 0.25;
             (Some(0.25 * TAU), &voxel.right, &voxel.left, &voxel.top)
         }
     };
