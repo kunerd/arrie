@@ -1079,7 +1079,7 @@ fn spawn_degree_45_block(
 }
 
 fn spawn_3_sided_diagonal_block(
-    position: Vec3,
+    mut position: Vec3,
     diagonal_type: &DiagonalType,
     voxel: &BlockInfo,
     block_gltf: &Gltf,
@@ -1138,11 +1138,28 @@ fn spawn_3_sided_diagonal_block(
     let right = get_mesh("3_sided.right");
     let top = get_mesh("3_sided.top");
 
+    // NOTE: no clue why the 0.75 position adjustment is needed
     let (angle, left_face, top_face, right_face) = match diagonal_type {
-        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
-        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
-        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
-        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
+        DiagonalType::UpRight => {
+            position.x += 0.75;
+            position.y -= 0.25;
+            (Some(0.5 * TAU), &voxel.right, &voxel.bottom, &voxel.left)
+        }
+        DiagonalType::UpLeft => {
+            position.x += 0.25;
+            position.y -= 0.25;
+            (Some(0.75 * TAU), &voxel.left, &voxel.right, &voxel.bottom)
+        }
+        DiagonalType::DownLeft => {
+            position.x += 0.25;
+            position.y += 0.25;
+            (None, &voxel.left, &voxel.top, &voxel.right)
+        }
+        DiagonalType::DownRight => {
+            position.x -= 0.25;
+            position.y -= 0.75;
+            (Some(0.25 * TAU), &voxel.right, &voxel.left, &voxel.top)
+        }
     };
 
     BlockBuilder {
@@ -1154,7 +1171,7 @@ fn spawn_3_sided_diagonal_block(
         left_right: Flatness::None,
         top_bottom: Flatness::None,
         position,
-        rotation: Some(angle),
+        rotation: angle,
     }
 }
 
