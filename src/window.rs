@@ -7,7 +7,7 @@ pub(super) fn plugin(app: &mut App) {
     let primary_window = Window {
         title: "Arrie".into(),
         resizable: false,
-        resolution: (800., 600.).into(),
+        resolution: (1280., 720.).into(),
         canvas: Some("#bevy".to_owned()),
         desired_maximum_frame_latency: core::num::NonZero::new(1u32),
         ..default()
