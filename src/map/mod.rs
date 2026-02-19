@@ -33,7 +33,7 @@ use crate::loader::{StyleFileAsset, StyleFileAssetLoader};
 pub fn plugin(app: &mut App) {
     let game_files_path = check_and_get_game_files_path();
     app.insert_resource(game_files_path)
-        .insert_resource(CurrentMap(Maps::Residential))
+        .insert_resource(CurrentMap(Maps::Industrial))
         .add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, MyExtension>,
         >::default())
@@ -475,6 +475,7 @@ struct Block;
 struct BlockFace {
     mesh: Mesh3d,
     material: MeshMaterial3d<ExtendedMaterial<StandardMaterial, MyExtension>>,
+    info: FaceInfo,
 }
 
 fn spawn_normal_block(
@@ -491,7 +492,7 @@ fn spawn_normal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face {
+        let (tile_id, flip, rotation) = match face.clone() {
             FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
             FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
         };
@@ -513,6 +514,7 @@ fn spawn_normal_block(
         Some(BlockFace {
             mesh: Mesh3d(mesh),
             material: MeshMaterial3d(ext_material),
+            info: face,
         })
     };
 
@@ -552,7 +554,7 @@ fn create_partial_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -580,6 +582,7 @@ fn create_partial_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -659,7 +662,7 @@ fn create_partial_corner_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -687,6 +690,7 @@ fn create_partial_corner_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -699,6 +703,8 @@ fn create_partial_corner_block(
     const PARTIAL_POS_OFFSET: f32 = (64.0 - 24.0) / 64.0 / 2.0;
 
     let mut position = position;
+
+    // FIXME: rotation doesn't work when UV flip is true
     let (rotation, left_face, right_face, top_face, bottom_face) = match partial_pos {
         file::CornerPosition::TopLeft => {
             position.x -= PARTIAL_POS_OFFSET;
@@ -708,17 +714,35 @@ fn create_partial_corner_block(
         file::CornerPosition::TopRight => {
             position.x += PARTIAL_POS_OFFSET;
             position.y += PARTIAL_POS_OFFSET;
-            (None, &voxel.left, &voxel.right, &voxel.top, &voxel.bottom)
+            (
+                Some(-0.75 * TAU),
+                &voxel.bottom,
+                &voxel.top,
+                &voxel.left,
+                &voxel.right,
+            )
         }
         file::CornerPosition::BottomLeft => {
             position.x -= PARTIAL_POS_OFFSET;
             position.y -= PARTIAL_POS_OFFSET;
-            (None, &voxel.left, &voxel.right, &voxel.top, &voxel.bottom)
+            (
+                Some(-0.25 * TAU),
+                &voxel.top,
+                &voxel.left,
+                &voxel.bottom,
+                &voxel.right,
+            )
         }
         file::CornerPosition::BottomRight => {
             position.x += PARTIAL_POS_OFFSET;
             position.y -= PARTIAL_POS_OFFSET;
-            (None, &voxel.left, &voxel.right, &voxel.top, &voxel.bottom)
+            (
+                Some(0.5 * TAU),
+                &voxel.right,
+                &voxel.left,
+                &voxel.bottom,
+                &voxel.top,
+            )
         }
     };
 
@@ -751,7 +775,7 @@ fn spawn_diagonal_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -781,6 +805,7 @@ fn spawn_diagonal_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -838,7 +863,7 @@ fn spawn_degree_26_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -868,6 +893,7 @@ fn spawn_degree_26_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -938,7 +964,7 @@ fn spawn_7_degree_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -968,6 +994,7 @@ fn spawn_7_degree_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -1019,7 +1046,7 @@ fn spawn_degree_45_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face {
+            let (tile_id, flip, rotation) = match face.clone() {
                 FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
                 FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
             };
@@ -1049,6 +1076,7 @@ fn spawn_degree_45_block(
             Some(BlockFace {
                 mesh: Mesh3d(mesh),
                 material: MeshMaterial3d(ext_material),
+                info: face,
             })
         };
 
@@ -1108,7 +1136,7 @@ fn spawn_3_sided_diagonal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, _angle| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face {
+        let (tile_id, flip, rotation) = match face.clone() {
             FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
             FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
         };
@@ -1131,6 +1159,7 @@ fn spawn_3_sided_diagonal_block(
         Some(BlockFace {
             mesh: Mesh3d(mesh),
             material: MeshMaterial3d(ext_material),
+            info: face,
         })
     };
 
@@ -1138,7 +1167,6 @@ fn spawn_3_sided_diagonal_block(
     let right = get_mesh("3_sided.right");
     let top = get_mesh("3_sided.top");
 
-    // NOTE: no clue why the 0.75 position adjustment is needed
     let (angle, left_face, top_face, right_face) = match diagonal_type {
         DiagonalType::UpRight => {
             position.x += 0.75;
@@ -1190,7 +1218,7 @@ fn spawn_4_sided_diagonal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face {
+        let (tile_id, flip, rotation) = match face.clone() {
             FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
             FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
         };
@@ -1219,6 +1247,7 @@ fn spawn_4_sided_diagonal_block(
         Some(BlockFace {
             mesh: Mesh3d(mesh),
             material: MeshMaterial3d(ext_material),
+            info: face,
         })
     };
 
@@ -1349,7 +1378,7 @@ fn check_and_get_game_files_path() -> GameFilesPath {
     GameFilesPath(Arc::from(game_files_path))
 }
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone)]
 enum FaceInfo {
     Lid(file::LidFace),
     Normal(file::NormalFace),
