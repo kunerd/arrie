@@ -365,6 +365,7 @@ impl FromStr for ChunkTypes {
     }
 }
 
+#[allow(dead_code)]
 enum ParseError {
     UnknownChunkType(String),
 }

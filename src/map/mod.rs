@@ -33,7 +33,9 @@ use crate::loader::{StyleFileAsset, StyleFileAssetLoader};
 pub fn plugin(app: &mut App) {
     let game_files_path = check_and_get_game_files_path();
     app.insert_resource(game_files_path)
-        .insert_resource(CurrentMap(Maps::Industrial))
+        .insert_resource(CurrentMap(Maps::Downtown))
+        // .insert_resource(CurrentMap(Maps::Residential))
+        // .insert_resource(CurrentMap(Maps::Industrial))
         .add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, MyExtension>,
         >::default())
@@ -193,9 +195,9 @@ struct MyExtension {
     #[uniform(100)]
     holder: MyExtensionHolder,
 }
+
 impl MyExtension {
     fn new(flip: bool, angle: f32) -> Self {
-        //let angle = -compute_rotation(rotate, flip);
         let flip = if flip { 1 } else { 0 };
 
         Self {
@@ -263,15 +265,19 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             )),
-            SlopeType::Diagonal(diagonal_type) => Some(spawn_diagonal_block(
-                pos,
-                voxel,
-                diagonal_type,
-                block_gltf,
-                &assets_gltfmesh,
-                &textures,
-                &mut ext_materials,
-            )),
+            SlopeType::Diagonal(diagonal_type) => {
+                block::spawn_diagonal(
+                    block.pos,
+                    voxel,
+                    diagonal_type,
+                    block_gltf,
+                    &assets_gltfmesh,
+                    &textures,
+                    &mut ext_materials,
+                    &mut commands,
+                );
+                None
+            }
             SlopeType::ThreeSidedDiagonal(diagonal_type) => Some(spawn_3_sided_diagonal_block(
                 pos,
                 diagonal_type,
@@ -757,77 +763,6 @@ fn create_partial_corner_block(
     }
 }
 
-fn spawn_diagonal_block(
-    position: Vec3,
-    voxel: &BlockInfo,
-    diagonal_type: &DiagonalType,
-    block_gltf: &Gltf,
-    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-    textures: &Res<TextureIndex>,
-    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) -> BlockBuilder {
-    let get_mesh = |name| {
-        let handle = block_gltf.named_meshes[name].clone();
-        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-    };
-
-    let mut spawn_face_maybe =
-        |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            if face.tile_id == 0 {
-                return None;
-            }
-
-            let base_color_texture = textures.index.get(&face.tile_id).cloned();
-
-            let angle = angle.unwrap_or(0.0);
-            let rotation = if face.flip {
-                face.rotate.clockwise_rad() - angle
-            } else {
-                face.rotate.clockwise_rad() + angle
-            };
-
-            let ext_material = ext_materials.add(ExtendedMaterial {
-                base: StandardMaterial {
-                    base_color_texture,
-                    alpha_mode: AlphaMode::AlphaToCoverage,
-                    ..default()
-                },
-                extension: MyExtension::new(face.flip, rotation),
-            });
-
-            Some(BlockFace {
-                mesh: Mesh3d(mesh),
-                material: MeshMaterial3d(ext_material),
-                info: face,
-            })
-        };
-
-    // setup faces meshs
-    let lid = get_mesh("diagonal.lid");
-    let left = get_mesh("diagonal.front");
-    let right = get_mesh("block.right");
-    let top = get_mesh("block.top");
-
-    let (angle, left_face, top_face, right_face) = match diagonal_type {
-        DiagonalType::UpRight => (-0.5 * TAU, &voxel.right, &voxel.bottom, &voxel.left),
-        DiagonalType::UpLeft => (-0.25 * TAU, &voxel.left, &voxel.right, &voxel.bottom),
-        DiagonalType::DownLeft => (0.0, &voxel.left, &voxel.top, &voxel.right),
-        DiagonalType::DownRight => (0.25 * TAU, &voxel.right, &voxel.left, &voxel.top),
-    };
-
-    BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
-        bottom: None,
-        left_right: Flatness::None,
-        top_bottom: Flatness::None,
-        position,
-        rotation: Some(angle),
-    }
-}
-
 fn spawn_degree_26_block(
     position: Vec3,
     direction: &SlopeDirection,
@@ -1289,6 +1224,7 @@ struct GameFilesPath(Arc<Path>);
 #[derive(Resource, Debug)]
 struct CurrentMap(Maps);
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone)]
 enum Maps {
     #[default]
@@ -1354,10 +1290,20 @@ impl std::ops::Deref for FaceInfo {
     }
 }
 
-fn add_debug_observer(mut commands: Commands, faces: Query<(Entity, Ref<FaceInfo>)>) {
+fn add_debug_observer(
+    mut commands: Commands,
+    blocks: Query<(Entity, Ref<block::Block>)>,
+    faces: Query<(Entity, Ref<FaceInfo>)>,
+) {
     for (entity, info) in &faces {
         if info.is_added() {
             commands.entity(entity).observe(on_click_show_debug);
+        }
+    }
+
+    for (entity, block) in &blocks {
+        if block.is_added() {
+            commands.entity(entity).observe(on_click_show_pos);
         }
     }
 }
@@ -1408,5 +1354,19 @@ fn on_click_show_debug(
 
     for mut span in &mut query {
         **span = format!("{:#?}", face);
+    }
+}
+
+fn on_click_show_pos(
+    click: Trigger<Pointer<Click>>,
+    blocks: Query<&block::Block>,
+    mut query: Query<&mut TextSpan, With<FaceDebugText>>,
+) {
+    let Ok(block) = blocks.get(click.entity()) else {
+        return;
+    };
+
+    for mut span in &mut query {
+        **span = format!("Pos: {:#?}\n", block.pos);
     }
 }
