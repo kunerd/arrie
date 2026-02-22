@@ -1,4 +1,4 @@
-pub mod block;
+mod block;
 pub mod file;
 
 mod loader;
@@ -147,7 +147,7 @@ struct BlockMesh(Handle<Gltf>);
 #[derive(Component)]
 struct UnloadedBlock {
     info: BlockInfo,
-    pos: Vec3,
+    pos: block::Position,
 }
 
 fn setup_map(
@@ -175,15 +175,13 @@ fn setup_map(
         let y = Y_MAX - (i / X_MAX) % Y_MAX;
         let z = i / (X_MAX * Y_MAX);
 
-        let pos = Vec3 {
-            x: x as f32,
-            y: y as f32,
-            z: z as f32,
-        };
-
         commands.spawn(UnloadedBlock {
             info: block_info,
-            pos,
+            pos: block::Position {
+                x: x as u8,
+                y: y as u8,
+                z: z as u8,
+            },
         });
     }
 
@@ -238,13 +236,26 @@ fn spawn_blocks(
     };
 
     for (entity, block) in &mut blocks {
-        let pos = block.pos;
+        let pos = Vec3::from(block.pos);
         let voxel = &block.info;
 
         commands.entity(entity).despawn();
 
         let builder = match &voxel.slope_type {
-            SlopeType::None | SlopeType::SlopeAbove => Some(spawn_normal_block(
+            SlopeType::None => {
+                block::spawn_normal(
+                    block.pos,
+                    voxel,
+                    block_gltf,
+                    &assets_gltfmesh,
+                    &textures,
+                    &mut ext_materials,
+                    &mut commands,
+                );
+
+                None
+            }
+            SlopeType::SlopeAbove => Some(spawn_normal_block(
                 pos,
                 voxel,
                 block_gltf,
@@ -326,6 +337,7 @@ fn spawn_blocks(
             continue;
         };
 
+        // FIXME depends on rotation
         match (voxel.left.flat, voxel.right.flat) {
             (true, true) => builder.left_right = Flatness::Both,
             (true, false) => builder.left_right = Flatness::Left,
@@ -492,23 +504,18 @@ fn spawn_normal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face.clone() {
-            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-        };
-
-        if tile_id == 0 {
+        if face.tile_id == 0 {
             return None;
         }
 
-        let base_color_texture = textures.index.get(&tile_id).cloned();
+        let base_color_texture = textures.index.get(&face.tile_id).cloned();
         let ext_material = ext_materials.add(ExtendedMaterial {
             base: StandardMaterial {
                 base_color_texture,
                 alpha_mode: AlphaMode::AlphaToCoverage,
                 ..default()
             },
-            extension: MyExtension::new(flip, rotation.clockwise_rad()),
+            extension: MyExtension::new(face.flip, face.rotate.clockwise_rad()),
         });
 
         Some(BlockFace {
@@ -525,11 +532,11 @@ fn spawn_normal_block(
     let bottom = get_mesh("block.bottom");
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone())),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(voxel.left.clone())),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(voxel.right.clone())),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(voxel.top.clone())),
-        bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(voxel.bottom.clone())),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone())),
+        left: spawn_face_maybe(left.clone(), FaceInfo(voxel.left.clone())),
+        right: spawn_face_maybe(right.clone(), FaceInfo(voxel.right.clone())),
+        top: spawn_face_maybe(top.clone(), FaceInfo(voxel.top.clone())),
+        bottom: spawn_face_maybe(bottom.clone(), FaceInfo(voxel.bottom.clone())),
         left_right: Flatness::None,
         top_bottom: Flatness::None,
         position,
@@ -554,29 +561,24 @@ fn create_partial_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
             let ext_material = ext_materials.add(ExtendedMaterial {
                 base: StandardMaterial {
                     base_color_texture,
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -633,11 +635,11 @@ fn create_partial_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), rotation),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
-        bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(bottom_face.clone()), None),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), rotation),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
+        bottom: spawn_face_maybe(bottom.clone(), FaceInfo(bottom_face.clone()), None),
         left_right: Flatness::None,
         top_bottom: Flatness::None,
         position,
@@ -662,29 +664,24 @@ fn create_partial_corner_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
             let ext_material = ext_materials.add(ExtendedMaterial {
                 base: StandardMaterial {
                     base_color_texture,
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -748,11 +745,11 @@ fn create_partial_corner_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), rotation),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
-        bottom: spawn_face_maybe(bottom.clone(), FaceInfo::Normal(bottom_face.clone()), None),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), rotation),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
+        bottom: spawn_face_maybe(bottom.clone(), FaceInfo(bottom_face.clone()), None),
         left_right: Flatness::None,
         top_bottom: Flatness::None,
         position,
@@ -776,22 +773,17 @@ fn spawn_diagonal_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
 
             let ext_material = ext_materials.add(ExtendedMaterial {
@@ -800,7 +792,7 @@ fn spawn_diagonal_block(
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -824,10 +816,10 @@ fn spawn_diagonal_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -864,22 +856,17 @@ fn spawn_degree_26_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
 
             let ext_material = ext_materials.add(ExtendedMaterial {
@@ -888,7 +875,7 @@ fn spawn_degree_26_block(
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -916,12 +903,10 @@ fn spawn_degree_26_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: top.and_then(|top| {
-            spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None)
-        }),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: top.and_then(|top| spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None)),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -965,22 +950,17 @@ fn spawn_7_degree_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
 
             let ext_material = ext_materials.add(ExtendedMaterial {
@@ -989,7 +969,7 @@ fn spawn_7_degree_block(
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -1017,12 +997,10 @@ fn spawn_7_degree_block(
     };
 
     Some(BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: top.and_then(|top| {
-            spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None)
-        }),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: top.and_then(|top| spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None)),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -1047,22 +1025,17 @@ fn spawn_degree_45_block(
 
     let mut spawn_face_maybe =
         |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            let (tile_id, flip, rotation) = match face.clone() {
-                FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-                FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-            };
-
-            if tile_id == 0 {
+            if face.tile_id == 0 {
                 return None;
             }
 
-            let base_color_texture = textures.index.get(&tile_id).cloned();
+            let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
             let angle = angle.unwrap_or(0.0);
-            let rotation = if flip {
-                rotation.clockwise_rad() - angle
+            let rotation = if face.flip {
+                face.rotate.clockwise_rad() - angle
             } else {
-                rotation.clockwise_rad() + angle
+                face.rotate.clockwise_rad() + angle
             };
 
             let ext_material = ext_materials.add(ExtendedMaterial {
@@ -1071,7 +1044,7 @@ fn spawn_degree_45_block(
                     alpha_mode: AlphaMode::AlphaToCoverage,
                     ..default()
                 },
-                extension: MyExtension::new(flip, rotation),
+                extension: MyExtension::new(face.flip, rotation),
             });
 
             Some(BlockFace {
@@ -1095,10 +1068,10 @@ fn spawn_degree_45_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), None),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -1137,16 +1110,11 @@ fn spawn_3_sided_diagonal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, _angle| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face.clone() {
-            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-        };
-
-        if tile_id == 0 {
+        if face.tile_id == 0 {
             return None;
         }
 
-        let base_color_texture = textures.index.get(&tile_id).cloned();
+        let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
         let ext_material = ext_materials.add(ExtendedMaterial {
             base: StandardMaterial {
@@ -1154,7 +1122,7 @@ fn spawn_3_sided_diagonal_block(
                 alpha_mode: AlphaMode::AlphaToCoverage,
                 ..default()
             },
-            extension: MyExtension::new(flip, rotation.clockwise_rad()),
+            extension: MyExtension::new(face.flip, face.rotate.clockwise_rad()),
         });
 
         Some(BlockFace {
@@ -1194,9 +1162,9 @@ fn spawn_3_sided_diagonal_block(
 
     BlockBuilder {
         lid: None,
-        left: spawn_face_maybe(lid.clone(), FaceInfo::Normal(left_face.clone()), angle),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), angle),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), angle),
+        left: spawn_face_maybe(lid.clone(), FaceInfo(left_face.clone()), angle),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), angle),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), angle),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -1220,21 +1188,16 @@ fn spawn_4_sided_diagonal_block(
     };
 
     let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, angle| -> Option<BlockFace> {
-        let (tile_id, flip, rotation) = match face.clone() {
-            FaceInfo::Lid(face) => (face.tile_id, face.flip, face.rotate),
-            FaceInfo::Normal(face) => (face.tile_id, face.flip, face.rotate),
-        };
-
-        if tile_id == 0 {
+        if face.tile_id == 0 {
             return None;
         }
 
-        let base_color_texture = textures.index.get(&tile_id).cloned();
+        let base_color_texture = textures.index.get(&face.tile_id).cloned();
 
-        let rotation = if flip {
-            rotation.clockwise_rad() - angle
+        let rotation = if face.flip {
+            face.rotate.clockwise_rad() - angle
         } else {
-            rotation.clockwise_rad() + angle
+            face.rotate.clockwise_rad() + angle
         };
 
         let ext_material = ext_materials.add(ExtendedMaterial {
@@ -1243,7 +1206,7 @@ fn spawn_4_sided_diagonal_block(
                 alpha_mode: AlphaMode::AlphaToCoverage,
                 ..default()
             },
-            extension: MyExtension::new(flip, rotation),
+            extension: MyExtension::new(face.flip, rotation),
         });
 
         Some(BlockFace {
@@ -1284,10 +1247,10 @@ fn spawn_4_sided_diagonal_block(
     };
 
     BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo::Lid(lid_face.clone()), angle),
-        left: spawn_face_maybe(left.clone(), FaceInfo::Normal(left_face.clone()), 0.0),
-        right: spawn_face_maybe(right.clone(), FaceInfo::Normal(right_face.clone()), 0.0),
-        top: spawn_face_maybe(top.clone(), FaceInfo::Normal(top_face.clone()), 0.0),
+        lid: spawn_face_maybe(lid.clone(), FaceInfo(lid_face.clone()), angle),
+        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), 0.0),
+        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), 0.0),
+        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), 0.0),
         bottom: None,
         left_right: Flatness::None,
         top_bottom: Flatness::None,
@@ -1381,9 +1344,14 @@ fn check_and_get_game_files_path() -> GameFilesPath {
 }
 
 #[derive(Component, Debug, Clone)]
-enum FaceInfo {
-    Lid(file::LidFace),
-    Normal(file::NormalFace),
+struct FaceInfo(file::Face);
+
+impl std::ops::Deref for FaceInfo {
+    type Target = file::Face;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 fn add_debug_observer(mut commands: Commands, faces: Query<(Entity, Ref<FaceInfo>)>) {

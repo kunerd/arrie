@@ -73,14 +73,34 @@ impl From<u8> for Rotate {
 }
 
 #[derive(Debug, Clone)]
-pub struct NormalFace {
+pub struct Face {
+    pub kind: FaceKind,
     pub tile_id: usize,
     pub flat: bool,
     pub flip: bool,
     pub rotate: Rotate,
 }
 
-impl From<u16> for NormalFace {
+impl Face {
+    pub fn new(kind: FaceKind, raw: RawFace) -> Self {
+        Self {
+            kind,
+            tile_id: raw.tile_id,
+            flat: raw.flat,
+            flip: raw.flip,
+            rotate: raw.rotate,
+        }
+    }
+}
+
+pub struct RawFace {
+    pub tile_id: usize,
+    pub flat: bool,
+    pub flip: bool,
+    pub rotate: Rotate,
+}
+
+impl From<u16> for RawFace {
     fn from(value: u16) -> Self {
         let tile_id = (value & 0b0000_0011_1111_1111) as usize;
         let flat = ((value >> 12) & 0x01) == 1;
@@ -98,41 +118,46 @@ impl From<u16> for NormalFace {
 }
 
 #[derive(Debug, Clone)]
-pub struct LidFace {
-    pub tile_id: usize,
-    pub flat: bool,
-    pub flip: bool,
-    pub rotate: Rotate,
+pub enum FaceKind {
+    Normal,
+    Lid,
 }
 
-impl From<u16> for LidFace {
-    fn from(value: u16) -> Self {
-        let tile_id = (value & 0b0000_0011_1111_1111) as usize;
-        let flat = ((value >> 12) & 0x01) == 1;
-        let flip = ((value >> 13) & 0x01) == 1;
-        let rotate = value >> 14;
-        let rotate = Rotate::from(rotate as u8);
+// #[derive(Debug, Clone)]
+// pub struct LidFace {
+//     pub tile_id: usize,
+//     pub flat: bool,
+//     pub flip: bool,
+//     pub rotate: Rotate,
+// }
 
-        Self {
-            tile_id,
-            flat,
-            flip,
-            rotate,
-        }
-    }
-}
+// impl From<u16> for LidFace {
+//     fn from(value: u16) -> Self {
+//         let tile_id = (value & 0b0000_0011_1111_1111) as usize;
+//         let flat = ((value >> 12) & 0x01) == 1;
+//         let flip = ((value >> 13) & 0x01) == 1;
+//         let rotate = value >> 14;
+//         let rotate = Rotate::from(rotate as u8);
+
+//         Self {
+//             tile_id,
+//             flat,
+//             flip,
+//             rotate,
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
-    pub left: NormalFace,
-    pub right: NormalFace,
-    pub top: NormalFace,
-    pub bottom: NormalFace,
-    pub lid: LidFace,
+    pub left: Face,
+    pub right: Face,
+    pub top: Face,
+    pub bottom: Face,
+    pub lid: Face,
     // TODO: use bitflags
     pub arrows: u8,
     // TODO: use bitflags
-    //pub slope_type: u8,
     pub slope_type: SlopeType,
 }
 
@@ -472,12 +497,18 @@ fn read_block_infos<T: Read + Seek>(len: usize, buf_reader: &mut T) -> Vec<Block
     let mut blocks = Vec::with_capacity(len);
 
     for _ in 0..len {
+        let left_raw = RawFace::from(buf_reader.read_u16::<NativeEndian>().unwrap());
+        let right_raw = RawFace::from(buf_reader.read_u16::<NativeEndian>().unwrap());
+        let top_raw = RawFace::from(buf_reader.read_u16::<NativeEndian>().unwrap());
+        let bottom_raw = RawFace::from(buf_reader.read_u16::<NativeEndian>().unwrap());
+        let lid_raw = RawFace::from(buf_reader.read_u16::<NativeEndian>().unwrap());
+
         let block = BlockInfo {
-            left: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
-            right: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
-            top: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
-            bottom: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
-            lid: buf_reader.read_u16::<NativeEndian>().unwrap().into(),
+            left: Face::new(FaceKind::Normal, left_raw),
+            right: Face::new(FaceKind::Normal, right_raw),
+            top: Face::new(FaceKind::Normal, top_raw),
+            bottom: Face::new(FaceKind::Normal, bottom_raw),
+            lid: Face::new(FaceKind::Lid, lid_raw),
             arrows: buf_reader.read_u8().unwrap(),
             slope_type: SlopeType::from(buf_reader.read_u8().unwrap()),
         };

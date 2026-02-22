@@ -1,106 +1,190 @@
-use bevy::{
-    asset::RenderAssetUsages,
-    math::Vec3,
-    prelude::{Mesh, MeshBuilder},
-    render::mesh::Indices,
-};
-use wgpu::PrimitiveTopology;
+pub mod face;
 
-pub struct BoxFaceBuilder {
-    face: FaceType,
-    flip: bool,
-    half_size: Vec3,
+pub use face::Face;
+
+use crate::map::{
+    file::{self, BlockInfo},
+    Flatness, MyExtension, TextureIndex,
+};
+
+use bevy::{
+    asset::Assets,
+    ecs::{
+        component::Component,
+        system::{Commands, Res, ResMut},
+    },
+    gltf::{Gltf, GltfMesh},
+    hierarchy::{BuildChildren, ChildBuild},
+    math::Vec3,
+    pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
+    render::{alpha::AlphaMode, mesh::Mesh3d, view::Visibility},
+    transform::components::Transform,
+    utils::default,
+};
+
+#[derive(Component)]
+struct Block {
+    pos: Position,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum FaceType {
-    Front,
-    Back,
-    Right,
-    Left,
-    Top,
-    Bottom,
+pub struct Position {
+    pub x: u8,
+    pub y: u8,
+    pub z: u8,
 }
 
-impl BoxFaceBuilder {
-    pub fn new(length: f32, face: FaceType) -> Self {
-        Self {
-            face,
-            flip: false,
-            half_size: Vec3::new(length, length, length) / 2.0,
+#[derive(Component)]
+struct Normal;
+
+pub fn spawn_normal(
+    pos: Position,
+    voxel: &BlockInfo,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+    commands: &mut Commands,
+) {
+    let mut get_face = |face: &file::Face, name| {
+        if face.tile_id == 0 {
+            return None;
         }
-    }
 
-    pub fn set_flip(mut self, flip: bool) -> Self {
-        self.flip = flip;
+        let handle = block_gltf
+            .named_meshes
+            .get(name)
+            .unwrap_or_else(|| panic!("named mesh [{name}] to be found"))
+            .clone();
 
-        self
-    }
+        let mesh = &assets_gltfmesh
+            .get(&handle)
+            .unwrap_or_else(|| panic!("mesh [{name}] to exist"))
+            .primitives[0]
+            .mesh;
+
+        let base_color_texture = textures
+            .index
+            .get(&face.tile_id)
+            .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
+            .clone();
+
+        // TODO could be optimized by re-using ext material with same properties
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(base_color_texture),
+                // NOTE: transperency is only allowed in flat faces
+                alpha_mode: if face.flat {
+                    AlphaMode::AlphaToCoverage
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            },
+            extension: MyExtension::new(face.flip, face.rotate.clockwise_rad()),
+        });
+
+        Some(Face {
+            mesh: Mesh3d(mesh.clone()),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let lid = get_face(&voxel.lid, "block.lid");
+    let left = get_face(&voxel.left, "block.left");
+    let right = get_face(&voxel.right, "block.right");
+    let top = get_face(&voxel.top, "block.top");
+    let bottom = get_face(&voxel.bottom, "block.bottom");
+
+    let transform = Transform::from_translation(Vec3::from(pos));
+
+    let lr_flat = match (voxel.left.flat, voxel.right.flat) {
+        (true, true) => Flatness::Both,
+        (true, false) => Flatness::Left,
+        (false, true) => Flatness::Right,
+        (false, false) => Flatness::None,
+    };
+
+    let tb_flat = match (voxel.top.flat, voxel.right.flat) {
+        (true, true) => Flatness::Both,
+        (true, false) => Flatness::Left,
+        (false, true) => Flatness::Right,
+        (false, false) => Flatness::None,
+    };
+
+    commands
+        .spawn((Block { pos }, Normal, transform, Visibility::Visible))
+        .with_children(|parent| {
+            lid.map(|face| parent.spawn((face::Lid, face)));
+
+            match lr_flat {
+                Flatness::None => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    right.map(|face| parent.spawn((face::Right, face)));
+                }
+                Flatness::Left => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    right.map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                }
+                Flatness::Right => {
+                    left.map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                    right.map(|face| parent.spawn((face::Right, face)));
+                }
+                Flatness::Both => {
+                    left.clone().map(|face| parent.spawn((face::Left, face)));
+                    right.clone().map(|face| parent.spawn((face::Right, face)));
+                    left.map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                    right.map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                }
+            }
+
+            match tb_flat {
+                Flatness::None => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                }
+                Flatness::Left => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    bottom.map(|face| {
+                        parent.spawn((face::Bottom, face, Transform::from_xyz(0.0, 1.0, 0.0)))
+                    });
+                }
+                Flatness::Right => {
+                    top.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -1.0, 0.0)))
+                    });
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                }
+                Flatness::Both => {
+                    top.clone().map(|face| parent.spawn((face::Top, face)));
+                    bottom
+                        .clone()
+                        .map(|face| parent.spawn((face::Bottom, face)));
+                    top.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -1.0, 0.0)))
+                    });
+                    bottom.map(|face| {
+                        parent.spawn((face::Bottom, face, Transform::from_xyz(0.0, 1.0, 0.0)))
+                    });
+                }
+            }
+        });
 }
 
-impl MeshBuilder for BoxFaceBuilder {
-    fn build(&self) -> Mesh {
-        let min = -self.half_size;
-        let max = self.half_size;
-
-        // Suppose Y-up right hand, and camera look from +Z to -Z
-        let vertices = match self.face {
-            FaceType::Front => &[
-                ([min.x, min.y, max.z], [0.0, 0.0, 1.0], [0.0, 1.0]), //[0.0, 0.0]
-                ([max.x, min.y, max.z], [0.0, 0.0, 1.0], [1.0, 1.0]), //[1.0, 0.0]
-                ([max.x, max.y, max.z], [0.0, 0.0, 1.0], [1.0, 0.0]), //[1.0, 1.0]
-                ([min.x, max.y, max.z], [0.0, 0.0, 1.0], [0.0, 0.0]), //[0.0, 1.0]
-            ],
-            FaceType::Back => &[
-                ([min.x, max.y, min.z], [0.0, 0.0, -1.0], [1.0, 0.0]),
-                ([max.x, max.y, min.z], [0.0, 0.0, -1.0], [0.0, 0.0]),
-                ([max.x, min.y, min.z], [0.0, 0.0, -1.0], [0.0, 1.0]),
-                ([min.x, min.y, min.z], [0.0, 0.0, -1.0], [1.0, 1.0]),
-            ],
-            FaceType::Right => &[
-                ([max.x, min.y, min.z], [1.0, 0.0, 0.0], [1.0, 1.0]),
-                ([max.x, max.y, min.z], [1.0, 0.0, 0.0], [0.0, 1.0]),
-                ([max.x, max.y, max.z], [1.0, 0.0, 0.0], [0.0, 0.0]),
-                ([max.x, min.y, max.z], [1.0, 0.0, 0.0], [1.0, 0.0]),
-            ],
-            FaceType::Left => &[
-                ([min.x, min.y, max.z], [-1.0, 0.0, 0.0], [1.0, 0.0]),
-                ([min.x, max.y, max.z], [-1.0, 0.0, 0.0], [0.0, 0.0]),
-                ([min.x, max.y, min.z], [-1.0, 0.0, 0.0], [0.0, 1.0]),
-                ([min.x, min.y, min.z], [-1.0, 0.0, 0.0], [1.0, 1.0]),
-            ],
-            FaceType::Top => &[
-                ([max.x, max.y, min.z], [0.0, 1.0, 0.0], [0.0, 1.0]),
-                ([min.x, max.y, min.z], [0.0, 1.0, 0.0], [1.0, 1.0]),
-                ([min.x, max.y, max.z], [0.0, 1.0, 0.0], [1.0, 0.0]),
-                ([max.x, max.y, max.z], [0.0, 1.0, 0.0], [0.0, 0.0]),
-            ],
-            FaceType::Bottom => &[
-                ([max.x, min.y, max.z], [0.0, -1.0, 0.0], [1.0, 0.0]),
-                ([min.x, min.y, max.z], [0.0, -1.0, 0.0], [0.0, 0.0]),
-                ([min.x, min.y, min.z], [0.0, -1.0, 0.0], [0.0, 1.0]),
-                ([max.x, min.y, min.z], [0.0, -1.0, 0.0], [1.0, 1.0]),
-            ],
-        };
-        let indices = vec![0, 1, 2, 2, 3, 0];
-
-        let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-        let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-        let mut uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
-
-        if self.flip {
-            uvs.iter_mut().for_each(|v: &mut [f32; 2]| {
-                v[1] = 1.0 - v[1];
-            });
-        };
-
-        Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(indices))
+impl From<Position> for Vec3 {
+    fn from(pos: Position) -> Self {
+        Vec3 {
+            x: f32::from(pos.x),
+            y: f32::from(pos.y),
+            z: f32::from(pos.z),
+        }
     }
 }
