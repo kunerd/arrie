@@ -527,15 +527,8 @@ pub fn three_sided_diagonal(
             .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
             .clone();
 
-        // NOTE: we need to compensate the UV map rotation of the lid that
-        // occurs while rotating the base 3D model
-        let rad = match diagonal_type {
-            DiagonalType::DownLeft => 0.0,
-            DiagonalType::DownRight => 0.25 * TAU,
-            DiagonalType::UpRight => 0.5 * TAU,
-            DiagonalType::UpLeft => 0.75 * TAU,
-        };
-        let rotation = face.rotate.clockwise_rad() - rad;
+        // NOTE: no compensation for rotation needed, because we have no lid
+        let rotation = face.rotate.clockwise_rad();
 
         // TODO could be optimized by re-using ext material with same properties
         let ext_material = ext_materials.add(ExtendedMaterial {
