@@ -196,7 +196,7 @@ pub enum SlopeLevel {
     High,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum DiagonalType {
     UpLeft,
     UpRight,

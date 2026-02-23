@@ -494,6 +494,116 @@ pub fn spawn_partial(
         });
 }
 
+pub fn three_sided_diagonal(
+    pos: Position,
+    diagonal_type: &file::DiagonalType,
+    voxel: &BlockInfo,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Assets<GltfMesh>,
+    textures: &TextureIndex,
+    ext_materials: &mut Assets<ExtendedMaterial<StandardMaterial, MyExtension>>,
+    commands: &mut Commands<'_, '_>,
+) {
+    let mut get_face = |face: &file::Face, name| {
+        if face.tile_id == 0 {
+            return None;
+        }
+
+        let handle = block_gltf
+            .named_meshes
+            .get(name)
+            .unwrap_or_else(|| panic!("named mesh [{name}] to be found"))
+            .clone();
+
+        let mesh = &assets_gltfmesh
+            .get(&handle)
+            .unwrap_or_else(|| panic!("mesh [{name}] to exist"))
+            .primitives[0]
+            .mesh;
+
+        let base_color_texture = textures
+            .index
+            .get(&face.tile_id)
+            .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
+            .clone();
+
+        // NOTE: we need to compensate the UV map rotation of the lid that
+        // occurs while rotating the base 3D model
+        let rad = match diagonal_type {
+            DiagonalType::DownLeft => 0.0,
+            DiagonalType::DownRight => 0.25 * TAU,
+            DiagonalType::UpRight => 0.5 * TAU,
+            DiagonalType::UpLeft => 0.75 * TAU,
+        };
+        let rotation = face.rotate.clockwise_rad() - rad;
+
+        // TODO could be optimized by re-using ext material with same properties
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(base_color_texture),
+                // NOTE: transperency is only allowed in flat faces
+                alpha_mode: if face.flat {
+                    AlphaMode::AlphaToCoverage
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            },
+            extension: MyExtension::new(face.flip, rotation),
+        });
+
+        Some(Face {
+            mesh: Mesh3d(mesh.clone()),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let top = &voxel.top;
+    let left = &voxel.left;
+    let bottom = &voxel.bottom;
+    let right = &voxel.right;
+
+    let (left, top, right) = match diagonal_type {
+        DiagonalType::DownLeft => (left, top, right),
+        DiagonalType::DownRight => (right, left, top),
+        DiagonalType::UpRight => (right, bottom, left),
+        DiagonalType::UpLeft => (left, right, bottom),
+    };
+
+    // TODO: impl flatness
+    // match (left.flat, right.flat) {
+    //     (true, true) => println!("3-side both flat: {:?}", pos),
+    //     (true, false) => println!("3-side left flat: {:?}", pos),
+    //     (false, true) => println!("3-side right flat {:?}", pos),
+    //     (false, false) => {}
+    // }
+
+    let left = get_face(&left, "3_sided.lid");
+    let top = get_face(&top, "3_sided.top");
+    let right = get_face(&right, "3_sided.right");
+
+    let rad = match diagonal_type {
+        DiagonalType::DownLeft => 0.0,
+        DiagonalType::DownRight => 0.25 * TAU,
+        DiagonalType::UpRight => 0.5 * TAU,
+        DiagonalType::UpLeft => 0.75 * TAU,
+    };
+
+    let transform =
+        Transform::from_translation(Vec3::from(pos)).with_rotation(Quat::from_rotation_z(rad));
+
+    commands
+        .spawn((Block { pos }, ThreeSided, transform, Visibility::Visible))
+        .with_children(|parent| {
+            left.map(|face| parent.spawn((face::Left, face)));
+            top.map(|face| parent.spawn((face::Top, face)));
+            right.map(|face| parent.spawn((face::Right, face)));
+        });
+}
+
+#[derive(Component)]
+struct ThreeSided;
+
 impl From<Position> for Vec3 {
     fn from(pos: Position) -> Self {
         Vec3 {

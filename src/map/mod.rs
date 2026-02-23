@@ -270,15 +270,34 @@ fn spawn_blocks(
                 );
                 None
             }
-            SlopeType::ThreeSidedDiagonal(diagonal_type) => Some(spawn_3_sided_diagonal_block(
-                pos,
-                diagonal_type,
-                voxel,
-                block_gltf,
-                &assets_gltfmesh,
-                &textures,
-                &mut ext_materials,
-            )),
+            SlopeType::ThreeSidedDiagonal(kind) => {
+                const THREE_SIDED_LID_TILE_ID: usize = 1023;
+
+                // NOTE: current workaround it's 4-sided
+                if voxel.lid.tile_id != THREE_SIDED_LID_TILE_ID {
+                    Some(spawn_4_sided_diagonal_block(
+                        pos,
+                        kind,
+                        voxel,
+                        block_gltf,
+                        &assets_gltfmesh,
+                        &textures,
+                        &mut ext_materials,
+                    ))
+                } else {
+                    block::three_sided_diagonal(
+                        block.pos,
+                        kind,
+                        voxel,
+                        block_gltf,
+                        &assets_gltfmesh,
+                        &textures,
+                        &mut ext_materials,
+                        &mut commands,
+                    );
+                    None
+                }
+            }
             SlopeType::Degree26 { direction, level } => Some(spawn_degree_26_block(
                 pos,
                 direction,
@@ -321,15 +340,6 @@ fn spawn_blocks(
                 );
                 None
             }
-            // Some(create_partial_block(
-            //     pos,
-            //     voxel,
-            //     partial_pos,
-            //     block_gltf,
-            //     &assets_gltfmesh,
-            //     &textures,
-            //     &mut ext_materials,
-            // )),
             SlopeType::PartialCornerBlock(partial_pos) => Some(create_partial_corner_block(
                 pos,
                 voxel,
@@ -499,163 +509,6 @@ struct BlockFace {
     mesh: Mesh3d,
     material: MeshMaterial3d<ExtendedMaterial<StandardMaterial, MyExtension>>,
     info: FaceInfo,
-}
-
-fn spawn_normal_block(
-    position: Vec3,
-    voxel: &BlockInfo,
-    block_gltf: &Gltf,
-    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-    textures: &Res<TextureIndex>,
-    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) -> BlockBuilder {
-    let get_mesh = |name: &str| {
-        let handle = block_gltf.named_meshes[name].clone();
-        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-    };
-
-    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo| -> Option<BlockFace> {
-        if face.tile_id == 0 {
-            return None;
-        }
-
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate.clockwise_rad()),
-        });
-
-        Some(BlockFace {
-            mesh: Mesh3d(mesh),
-            material: MeshMaterial3d(ext_material),
-            info: face,
-        })
-    };
-
-    let lid = get_mesh("block.lid");
-    let left = get_mesh("block.left");
-    let right = get_mesh("block.right");
-    let top = get_mesh("block.top");
-    let bottom = get_mesh("block.bottom");
-
-    BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone())),
-        left: spawn_face_maybe(left.clone(), FaceInfo(voxel.left.clone())),
-        right: spawn_face_maybe(right.clone(), FaceInfo(voxel.right.clone())),
-        top: spawn_face_maybe(top.clone(), FaceInfo(voxel.top.clone())),
-        bottom: spawn_face_maybe(bottom.clone(), FaceInfo(voxel.bottom.clone())),
-        left_right: Flatness::None,
-        top_bottom: Flatness::None,
-        position,
-        rotation: None,
-    }
-}
-
-fn create_partial_block(
-    position: Vec3,
-    voxel: &BlockInfo,
-    partial_pos: &file::PartialPosition,
-    block_gltf: &Gltf,
-    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-    textures: &Res<TextureIndex>,
-    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) -> BlockBuilder {
-    let get_mesh = |name: &str| {
-        let name = format!("partial.{name}");
-        let handle = block_gltf.named_meshes[name.as_str()].clone();
-        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-    };
-
-    let mut spawn_face_maybe =
-        |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            if face.tile_id == 0 {
-                return None;
-            }
-
-            let angle = angle.unwrap_or(0.0);
-            let rotation = if face.flip {
-                face.rotate.clockwise_rad() - angle
-            } else {
-                face.rotate.clockwise_rad() + angle
-            };
-            let base_color_texture = textures.index.get(&face.tile_id).cloned();
-            let ext_material = ext_materials.add(ExtendedMaterial {
-                base: StandardMaterial {
-                    base_color_texture,
-                    alpha_mode: AlphaMode::AlphaToCoverage,
-                    ..default()
-                },
-                extension: MyExtension::new(face.flip, rotation),
-            });
-
-            Some(BlockFace {
-                mesh: Mesh3d(mesh),
-                material: MeshMaterial3d(ext_material),
-                info: face,
-            })
-        };
-
-    let lid = get_mesh("lid");
-    let left = get_mesh("left");
-    let right = get_mesh("right");
-    let top = get_mesh("top");
-    let bottom = get_mesh("bottom");
-
-    const PARTIAL_POS_OFFSET: f32 = (64.0 - 24.0) / 64.0 / 2.0;
-
-    let mut position = position;
-    let (rotation, left_face, right_face, top_face, bottom_face) = match partial_pos {
-        file::PartialPosition::Left => {
-            position.x -= PARTIAL_POS_OFFSET;
-            (
-                Some(0.75 * TAU),
-                &voxel.bottom,
-                &voxel.top,
-                &voxel.right,
-                &voxel.left,
-            )
-        }
-        file::PartialPosition::Right => {
-            position.x += PARTIAL_POS_OFFSET;
-            (
-                Some(0.25 * TAU),
-                &voxel.bottom,
-                &voxel.top,
-                &voxel.left,
-                &voxel.right,
-            )
-        }
-        file::PartialPosition::Top => {
-            position.y += PARTIAL_POS_OFFSET;
-            (
-                Some(0.5 * TAU),
-                &voxel.right,
-                &voxel.left,
-                &voxel.bottom,
-                &voxel.top,
-            )
-        }
-        file::PartialPosition::Bottom => {
-            position.y -= PARTIAL_POS_OFFSET;
-            (None, &voxel.left, &voxel.right, &voxel.top, &voxel.bottom)
-        }
-    };
-
-    BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), rotation),
-        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
-        bottom: spawn_face_maybe(bottom.clone(), FaceInfo(bottom_face.clone()), None),
-        left_right: Flatness::None,
-        top_bottom: Flatness::None,
-        position,
-        rotation,
-    }
 }
 
 fn create_partial_corner_block(
