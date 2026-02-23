@@ -93,7 +93,6 @@ pub fn spawn_normal(
     };
 
     let lid = get_face(&voxel.lid, "block.lid");
-
     let (left, right, lr_flat) = match (voxel.left.flat, voxel.right.flat) {
         (true, true) => (voxel.left.clone(), voxel.right.clone(), Flatness::Both),
         (true, false) => {
@@ -284,6 +283,214 @@ pub fn spawn_diagonal(
             diagonal.map(|face| parent.spawn(face));
             right.map(|face| parent.spawn(face));
             top.map(|face| parent.spawn(face));
+        });
+}
+
+pub fn spawn_partial(
+    pos: Position,
+    voxel: &BlockInfo,
+    partial_pos: &file::PartialPosition,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Res<Assets<GltfMesh>>,
+    textures: &Res<TextureIndex>,
+    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
+    commands: &mut Commands,
+) {
+    let mut get_face = |face: &file::Face, name| {
+        if face.tile_id == 0 {
+            return None;
+        }
+
+        let handle = block_gltf
+            .named_meshes
+            .get(name)
+            .unwrap_or_else(|| panic!("named mesh [{name}] to be found"))
+            .clone();
+
+        let mesh = &assets_gltfmesh
+            .get(&handle)
+            .unwrap_or_else(|| panic!("mesh [{name}] to exist"))
+            .primitives[0]
+            .mesh;
+
+        let base_color_texture = textures
+            .index
+            .get(&face.tile_id)
+            .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
+            .clone();
+
+        let mut rotation = face.rotate.clockwise_rad();
+        // NOTE: we need to compensate the UV map rotation of the lid that
+        // occurs while rotating the base 3D model
+        if let file::FaceKind::Lid = face.kind {
+            match partial_pos {
+                file::PartialPosition::Bottom => {}
+                file::PartialPosition::Right => rotation -= 0.75 * TAU,
+                file::PartialPosition::Top => rotation -= 0.5 * TAU,
+                file::PartialPosition::Left => rotation -= 0.25 * TAU,
+            }
+        };
+
+        // TODO could be optimized by re-using ext material with same properties
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(base_color_texture),
+                // NOTE: transperency is only allowed in flat faces
+                alpha_mode: if face.flat {
+                    AlphaMode::AlphaToCoverage
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            },
+            extension: MyExtension::new(face.flip, rotation),
+        });
+
+        Some(Face {
+            mesh: Mesh3d(mesh.clone()),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    const PARTIAL_POS_OFFSET: f32 = (64.0 - 24.0) / 64.0 / 2.0;
+    let transform = Transform::from_translation(Vec3::from(pos));
+    let transform = match partial_pos {
+        file::PartialPosition::Left => transform
+            .mul_transform(Transform::from_xyz(-PARTIAL_POS_OFFSET, 0.0, 0.0))
+            .with_rotation(Quat::from_rotation_z(0.25 * TAU)),
+        file::PartialPosition::Right => transform
+            .mul_transform(Transform::from_xyz(PARTIAL_POS_OFFSET, 0.0, 0.0))
+            .with_rotation(Quat::from_rotation_z(0.75 * TAU)),
+        file::PartialPosition::Top => transform
+            .mul_transform(Transform::from_xyz(0.0, PARTIAL_POS_OFFSET, 0.0))
+            .with_rotation(Quat::from_rotation_z(0.5 * TAU)),
+        file::PartialPosition::Bottom => {
+            transform.mul_transform(Transform::from_xyz(0.0, -PARTIAL_POS_OFFSET, 0.0))
+        }
+    };
+
+    let left = &voxel.left;
+    let right = &voxel.right;
+    let top = &voxel.top;
+    let bottom = &voxel.bottom;
+
+    let (left, top, right, bottom) = match partial_pos {
+        file::PartialPosition::Bottom => (left, top, right, bottom),
+        file::PartialPosition::Right => (top, right, bottom, left),
+        file::PartialPosition::Top => (right, bottom, left, top),
+        file::PartialPosition::Left => (bottom, left, top, right),
+    };
+
+    let (left, right, lr_flat) = match (left.flat, right.flat) {
+        (true, true) => (left.clone(), right.clone(), Flatness::Both),
+        (true, false) => {
+            let mut right = right.clone();
+            right.tile_id = left.tile_id;
+            right.flat = left.flat;
+            (left.clone(), right, Flatness::Left)
+        }
+        (false, true) => {
+            let mut left = left.clone();
+            left.tile_id = right.tile_id;
+            left.flat = right.flat;
+            (left, right.clone(), Flatness::Right)
+        }
+        (false, false) => (left.clone(), right.clone(), Flatness::None),
+    };
+    let (top, bottom, tb_flat) = match (top.flat, bottom.flat) {
+        (true, true) => (top.clone(), bottom.clone(), Flatness::Both),
+        (true, false) => {
+            let mut bottom = bottom.clone();
+            bottom.tile_id = top.tile_id;
+            bottom.flat = top.flat;
+            (top.clone(), bottom, Flatness::Left)
+        }
+        (false, true) => {
+            let mut top = top.clone();
+            top.tile_id = bottom.tile_id;
+            top.flat = bottom.flat;
+            (top, bottom.clone(), Flatness::Right)
+        }
+        (false, false) => (top.clone(), bottom.clone(), Flatness::None),
+    };
+
+    let lid = get_face(&voxel.lid, "partial.lid");
+    let left = get_face(&left, "partial.left");
+    let right = get_face(&right, "partial.right");
+    let top = get_face(&top, "partial.top");
+    let bottom = get_face(&bottom, "partial.bottom");
+
+    commands
+        .spawn((Block { pos }, Normal, transform, Visibility::Visible))
+        .with_children(|parent| {
+            lid.map(|face| parent.spawn((face::Lid, face)));
+
+            match lr_flat {
+                Flatness::None => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    right.map(|face| parent.spawn((face::Right, face)));
+                }
+                Flatness::Left => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    right.map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                }
+                Flatness::Right => {
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    left.map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                }
+                Flatness::Both => {
+                    left.clone().map(|face| parent.spawn((face::Left, face)));
+                    right.clone().map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    left.map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                }
+            }
+
+            const FLAT_OFFSET: f32 = 24.0 / 64.0;
+            match tb_flat {
+                Flatness::None => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                }
+                Flatness::Left => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    bottom.map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                }
+                Flatness::Right => {
+                    top.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
+                    });
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                }
+                Flatness::Both => {
+                    top.clone().map(|face| parent.spawn((face::Top, face)));
+                    bottom.clone().map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                    top.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
+                    });
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                }
+            }
         });
 }
 

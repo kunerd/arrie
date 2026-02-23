@@ -244,7 +244,7 @@ fn spawn_blocks(
         commands.entity(entity).despawn();
 
         let builder = match &voxel.slope_type {
-            SlopeType::None => {
+            SlopeType::None | SlopeType::SlopeAbove => {
                 block::spawn_normal(
                     block.pos,
                     voxel,
@@ -257,14 +257,6 @@ fn spawn_blocks(
 
                 None
             }
-            SlopeType::SlopeAbove => Some(spawn_normal_block(
-                pos,
-                voxel,
-                block_gltf,
-                &assets_gltfmesh,
-                &textures,
-                &mut ext_materials,
-            )),
             SlopeType::Diagonal(diagonal_type) => {
                 block::spawn_diagonal(
                     block.pos,
@@ -316,15 +308,28 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             ),
-            SlopeType::PartialBlock(partial_pos) => Some(create_partial_block(
-                pos,
-                voxel,
-                partial_pos,
-                block_gltf,
-                &assets_gltfmesh,
-                &textures,
-                &mut ext_materials,
-            )),
+            SlopeType::PartialBlock(partial_pos) => {
+                block::spawn_partial(
+                    block.pos,
+                    voxel,
+                    partial_pos,
+                    block_gltf,
+                    &assets_gltfmesh,
+                    &textures,
+                    &mut ext_materials,
+                    &mut commands,
+                );
+                None
+            }
+            // Some(create_partial_block(
+            //     pos,
+            //     voxel,
+            //     partial_pos,
+            //     block_gltf,
+            //     &assets_gltfmesh,
+            //     &textures,
+            //     &mut ext_materials,
+            // )),
             SlopeType::PartialCornerBlock(partial_pos) => Some(create_partial_corner_block(
                 pos,
                 voxel,
