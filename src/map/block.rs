@@ -5,7 +5,7 @@ use std::f32::consts::TAU;
 pub use face::Face;
 
 use crate::map::{
-    file::{self, BlockInfo, DiagonalType},
+    file::{self, BlockInfo, DiagonalType, SlopeDirection},
     Flatness, MyExtension, TextureIndex,
 };
 
@@ -199,6 +199,9 @@ pub fn spawn_normal(
         });
 }
 
+#[derive(Component)]
+struct Diagonal;
+
 pub fn spawn_diagonal(
     pos: Position,
     voxel: &BlockInfo,
@@ -276,7 +279,7 @@ pub fn spawn_diagonal(
     let transform =
         Transform::from_translation(Vec3::from(pos)).with_rotation(Quat::from_rotation_z(angle));
     commands
-        .spawn((Block { pos }, Normal, transform, Visibility::Visible))
+        .spawn((Block { pos }, Diagonal, transform, Visibility::Visible))
         .with_children(|parent| {
             // NOTE: diagonals can not be flat
             lid.map(|face| parent.spawn((face::Lid, face)));
@@ -285,6 +288,9 @@ pub fn spawn_diagonal(
             top.map(|face| parent.spawn(face));
         });
 }
+
+#[derive(Component)]
+struct Partial;
 
 pub fn spawn_partial(
     pos: Position,
@@ -421,7 +427,7 @@ pub fn spawn_partial(
     let bottom = get_face(&bottom, "partial.bottom");
 
     commands
-        .spawn((Block { pos }, Normal, transform, Visibility::Visible))
+        .spawn((Block { pos }, Partial, transform, Visibility::Visible))
         .with_children(|parent| {
             lid.map(|face| parent.spawn((face::Lid, face)));
 
@@ -493,6 +499,9 @@ pub fn spawn_partial(
             }
         });
 }
+
+#[derive(Component)]
+struct ThreeSided;
 
 pub fn three_sided_diagonal(
     pos: Position,
@@ -595,7 +604,142 @@ pub fn three_sided_diagonal(
 }
 
 #[derive(Component)]
-struct ThreeSided;
+struct Degree45;
+
+pub(crate) fn spawn_45_degree(
+    pos: Position,
+    direction: &file::SlopeDirection,
+    voxel: &BlockInfo,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Assets<GltfMesh>,
+    textures: &TextureIndex,
+    ext_materials: &mut Assets<ExtendedMaterial<StandardMaterial, MyExtension>>,
+    commands: &mut Commands<'_, '_>,
+) {
+    let mut get_face = |face: &file::Face, name| {
+        if face.tile_id == 0 {
+            return None;
+        }
+
+        let handle = block_gltf
+            .named_meshes
+            .get(name)
+            .unwrap_or_else(|| panic!("named mesh [{name}] to be found"))
+            .clone();
+
+        let mesh = &assets_gltfmesh
+            .get(&handle)
+            .unwrap_or_else(|| panic!("mesh [{name}] to exist"))
+            .primitives[0]
+            .mesh;
+
+        let base_color_texture = textures
+            .index
+            .get(&face.tile_id)
+            .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
+            .clone();
+
+        // NOTE: we need to compensate the UV map rotation of the lid that
+        // occurs while rotating the base 3D model
+        let mut rotation = face.rotate.clockwise_rad();
+        if let file::FaceKind::Lid = face.kind {
+            let compensation = match direction {
+                SlopeDirection::Up => 0.0,
+                SlopeDirection::Left => 0.25 * TAU,
+                SlopeDirection::Down => 0.5 * TAU,
+                SlopeDirection::Right => 0.75 * TAU,
+            };
+
+            if face.flip {
+                rotation -= compensation;
+            } else {
+                rotation += compensation;
+            };
+        };
+
+        // TODO could be optimized by re-using ext material with same properties
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(base_color_texture),
+                // NOTE: transperency is only allowed in flat faces
+                alpha_mode: if face.flat {
+                    AlphaMode::AlphaToCoverage
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            },
+            extension: MyExtension::new(face.flip, rotation),
+        });
+
+        Some(Face {
+            mesh: Mesh3d(mesh.clone()),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let lid = &voxel.lid;
+    let left = &voxel.left;
+    let top = &voxel.top;
+    let right = &voxel.right;
+    let bottom = &voxel.bottom;
+
+    let (rotation, left, top, right, bottom) = match direction {
+        SlopeDirection::Up => (0.0, left, top, right, bottom),
+        SlopeDirection::Left => (0.25 * TAU, bottom, left, top, right),
+        SlopeDirection::Down => (0.5 * TAU, right, bottom, left, top),
+        SlopeDirection::Right => (0.75 * TAU, top, right, bottom, left),
+    };
+
+    let top_flat = top.flat.then(|| {
+        let mut bottom = bottom.clone();
+        bottom.flat = true;
+        get_face(&bottom, "block.bottom")
+    });
+
+    let left_flat = left.flat.then(|| {
+        println!("left flat: {pos:?}");
+        let mut right = right.clone();
+        right.flat = true;
+        get_face(&right, "degree_45.right")
+    });
+
+    let right_flat = right.flat.then(|| {
+        println!("right flat: {pos:?}");
+        let mut left = left.clone();
+        left.flat = true;
+        get_face(&left, "degree_45.left")
+    });
+
+    let lid = get_face(lid, "degree_45.lid");
+    let left = get_face(left, "degree_45.left");
+    let right = get_face(right, "degree_45.right");
+    let top = get_face(top, "block.top");
+
+    let transform =
+        Transform::from_translation(Vec3::from(pos)).with_rotation(Quat::from_rotation_z(rotation));
+
+    commands
+        .spawn((Block { pos }, Degree45, transform, Visibility::Visible))
+        .with_children(|parent| {
+            lid.map(|face| parent.spawn((face::Lid, face)));
+
+            top.map(|face| parent.spawn((face::Top, face)));
+            top_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Top, face, Transform::from_xyz(0.0, 1.0, 0.0))));
+
+            left.map(|face| parent.spawn((face::Left, face)));
+            left_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Left, face, Transform::from_xyz(-1.0, 0.0, 0.0))));
+
+            right.map(|face| parent.spawn((face::Right, face)));
+            right_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Right, face, Transform::from_xyz(1.0, 0.0, 0.0))));
+        });
+}
 
 impl From<Position> for Vec3 {
     fn from(pos: Position) -> Self {

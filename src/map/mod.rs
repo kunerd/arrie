@@ -308,15 +308,19 @@ fn spawn_blocks(
                 &textures,
                 &mut ext_materials,
             )),
-            SlopeType::Degree45(slope_direction) => Some(spawn_degree_45_block(
-                pos,
-                slope_direction,
-                voxel,
-                block_gltf,
-                &assets_gltfmesh,
-                &textures,
-                &mut ext_materials,
-            )),
+            SlopeType::Degree45(direction) => {
+                block::spawn_45_degree(
+                    block.pos,
+                    direction,
+                    voxel,
+                    block_gltf,
+                    &assets_gltfmesh,
+                    &textures,
+                    &mut ext_materials,
+                    &mut commands,
+                );
+                None
+            }
             SlopeType::Degree7 { direction, index } => spawn_7_degree_block(
                 pos,
                 direction,
@@ -800,170 +804,6 @@ fn spawn_7_degree_block(
         position,
         rotation: Some(angle),
     })
-}
-
-fn spawn_degree_45_block(
-    position: Vec3,
-    direction: &SlopeDirection,
-    voxel: &BlockInfo,
-    block_gltf: &Gltf,
-    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-    textures: &Res<TextureIndex>,
-    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) -> BlockBuilder {
-    let get_mesh = |name| {
-        let handle = block_gltf.named_meshes[name].clone();
-        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-    };
-
-    let mut spawn_face_maybe =
-        |mesh: Handle<Mesh>, face: FaceInfo, angle: Option<f32>| -> Option<BlockFace> {
-            if face.tile_id == 0 {
-                return None;
-            }
-
-            let base_color_texture = textures.index.get(&face.tile_id).cloned();
-
-            let angle = angle.unwrap_or(0.0);
-            let rotation = if face.flip {
-                face.rotate.clockwise_rad() - angle
-            } else {
-                face.rotate.clockwise_rad() + angle
-            };
-
-            let ext_material = ext_materials.add(ExtendedMaterial {
-                base: StandardMaterial {
-                    base_color_texture,
-                    alpha_mode: AlphaMode::AlphaToCoverage,
-                    ..default()
-                },
-                extension: MyExtension::new(face.flip, rotation),
-            });
-
-            Some(BlockFace {
-                mesh: Mesh3d(mesh),
-                material: MeshMaterial3d(ext_material),
-                info: face,
-            })
-        };
-
-    // setup faces meshs
-    let lid = get_mesh("degree_45.lid");
-    let left = get_mesh("degree_45.left");
-    let right = get_mesh("degree_45.right");
-    let top = get_mesh("block.top");
-
-    let (angle, left_face, right_face, top_face) = match direction {
-        SlopeDirection::Down => (0.5 * TAU, &voxel.right, &voxel.left, &voxel.bottom),
-        SlopeDirection::Up => (0.0, &voxel.left, &voxel.right, &voxel.top),
-        SlopeDirection::Left => (0.25 * TAU, &voxel.bottom, &voxel.top, &voxel.right),
-        SlopeDirection::Right => (0.75 * TAU, &voxel.top, &voxel.bottom, &voxel.left),
-    };
-
-    BlockBuilder {
-        lid: spawn_face_maybe(lid.clone(), FaceInfo(voxel.lid.clone()), Some(angle)),
-        left: spawn_face_maybe(left.clone(), FaceInfo(left_face.clone()), None),
-        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), None),
-        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), None),
-        bottom: None,
-        left_right: Flatness::None,
-        top_bottom: Flatness::None,
-        position,
-        rotation: Some(angle),
-    }
-}
-
-fn spawn_3_sided_diagonal_block(
-    mut position: Vec3,
-    diagonal_type: &DiagonalType,
-    voxel: &BlockInfo,
-    block_gltf: &Gltf,
-    assets_gltfmesh: &Res<Assets<GltfMesh>>,
-    textures: &Res<TextureIndex>,
-    ext_materials: &mut ResMut<Assets<ExtendedMaterial<StandardMaterial, MyExtension>>>,
-) -> BlockBuilder {
-    const THREE_SIDED_LID_TILE_ID: usize = 1023;
-
-    // current workaround it's 4-sided
-    if voxel.lid.tile_id != THREE_SIDED_LID_TILE_ID {
-        return spawn_4_sided_diagonal_block(
-            position,
-            diagonal_type,
-            voxel,
-            block_gltf,
-            assets_gltfmesh,
-            textures,
-            ext_materials,
-        );
-    }
-
-    let get_mesh = |name| {
-        let handle = block_gltf.named_meshes[name].clone();
-        &assets_gltfmesh.get(&handle).unwrap().primitives[0].mesh
-    };
-
-    let mut spawn_face_maybe = |mesh: Handle<Mesh>, face: FaceInfo, _angle| -> Option<BlockFace> {
-        if face.tile_id == 0 {
-            return None;
-        }
-
-        let base_color_texture = textures.index.get(&face.tile_id).cloned();
-
-        let ext_material = ext_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color_texture,
-                alpha_mode: AlphaMode::AlphaToCoverage,
-                ..default()
-            },
-            extension: MyExtension::new(face.flip, face.rotate.clockwise_rad()),
-        });
-
-        Some(BlockFace {
-            mesh: Mesh3d(mesh),
-            material: MeshMaterial3d(ext_material),
-            info: face,
-        })
-    };
-
-    let lid = get_mesh("3_sided.lid");
-    let right = get_mesh("3_sided.right");
-    let top = get_mesh("3_sided.top");
-
-    // FIXME: flat not working -> example are trees
-    let (angle, left_face, top_face, right_face) = match diagonal_type {
-        DiagonalType::UpRight => {
-            position.x -= 0.25;
-            position.y -= 0.25;
-            (Some(0.5 * TAU), &voxel.right, &voxel.bottom, &voxel.left)
-        }
-        DiagonalType::UpLeft => {
-            position.x += 0.25;
-            position.y -= 0.25;
-            (Some(0.75 * TAU), &voxel.left, &voxel.right, &voxel.bottom)
-        }
-        DiagonalType::DownLeft => {
-            position.x += 0.25;
-            position.y += 0.25;
-            (None, &voxel.left, &voxel.top, &voxel.right)
-        }
-        DiagonalType::DownRight => {
-            position.x -= 0.25;
-            position.y += 0.25;
-            (Some(0.25 * TAU), &voxel.right, &voxel.left, &voxel.top)
-        }
-    };
-
-    BlockBuilder {
-        lid: None,
-        left: spawn_face_maybe(lid.clone(), FaceInfo(left_face.clone()), angle),
-        right: spawn_face_maybe(right.clone(), FaceInfo(right_face.clone()), angle),
-        top: spawn_face_maybe(top.clone(), FaceInfo(top_face.clone()), angle),
-        bottom: None,
-        left_right: Flatness::None,
-        top_bottom: Flatness::None,
-        position,
-        rotation: angle,
-    }
 }
 
 fn spawn_4_sided_diagonal_block(
