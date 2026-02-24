@@ -329,12 +329,18 @@ pub fn spawn_partial(
         // NOTE: we need to compensate the UV map rotation of the lid that
         // occurs while rotating the base 3D model
         if let file::FaceKind::Lid = face.kind {
-            match partial_pos {
-                file::PartialPosition::Bottom => {}
-                file::PartialPosition::Right => rotation -= 0.75 * TAU,
-                file::PartialPosition::Top => rotation -= 0.5 * TAU,
-                file::PartialPosition::Left => rotation -= 0.25 * TAU,
-            }
+            let compensation = match partial_pos {
+                file::PartialPosition::Bottom => 0.0,
+                file::PartialPosition::Right => 0.75 * TAU,
+                file::PartialPosition::Top => 0.5 * TAU,
+                file::PartialPosition::Left => 0.25 * TAU,
+            };
+
+            if face.flip {
+                rotation -= compensation;
+            } else {
+                rotation += compensation;
+            };
         };
 
         // TODO could be optimized by re-using ext material with same properties
@@ -387,38 +393,29 @@ pub fn spawn_partial(
         file::PartialPosition::Left => (bottom, left, top, right),
     };
 
-    let (left, right, lr_flat) = match (left.flat, right.flat) {
-        (true, true) => (left.clone(), right.clone(), Flatness::Both),
-        (true, false) => {
-            let mut right = right.clone();
-            right.tile_id = left.tile_id;
-            right.flat = left.flat;
-            (left.clone(), right, Flatness::Left)
-        }
-        (false, true) => {
-            let mut left = left.clone();
-            left.tile_id = right.tile_id;
-            left.flat = right.flat;
-            (left, right.clone(), Flatness::Right)
-        }
-        (false, false) => (left.clone(), right.clone(), Flatness::None),
-    };
-    let (top, bottom, tb_flat) = match (top.flat, bottom.flat) {
-        (true, true) => (top.clone(), bottom.clone(), Flatness::Both),
-        (true, false) => {
-            let mut bottom = bottom.clone();
-            bottom.tile_id = top.tile_id;
-            bottom.flat = top.flat;
-            (top.clone(), bottom, Flatness::Left)
-        }
-        (false, true) => {
-            let mut top = top.clone();
-            top.tile_id = bottom.tile_id;
-            top.flat = bottom.flat;
-            (top, bottom.clone(), Flatness::Right)
-        }
-        (false, false) => (top.clone(), bottom.clone(), Flatness::None),
-    };
+    let left_flat = left.flat.then(|| {
+        let mut right = right.clone();
+        right.flat = true;
+        get_face(&right, "partial.right")
+    });
+
+    let right_flat = right.flat.then(|| {
+        let mut left = left.clone();
+        left.flat = true;
+        get_face(&left, "partial.left")
+    });
+
+    let top_flat = top.flat.then(|| {
+        let mut bottom = bottom.clone();
+        bottom.flat = true;
+        get_face(&bottom, "partial.bottom")
+    });
+
+    let bottom_flat = bottom.flat.then(|| {
+        let mut top = top.clone();
+        top.flat = true;
+        get_face(&top, "partial.top")
+    });
 
     let lid = get_face(&voxel.lid, "partial.lid");
     let left = get_face(&left, "partial.left");
@@ -431,72 +428,30 @@ pub fn spawn_partial(
         .with_children(|parent| {
             lid.map(|face| parent.spawn((face::Lid, face)));
 
-            match lr_flat {
-                Flatness::None => {
-                    left.map(|face| parent.spawn((face::Left, face)));
-                    right.map(|face| parent.spawn((face::Right, face)));
-                }
-                Flatness::Left => {
-                    left.map(|face| parent.spawn((face::Left, face)));
-                    right.map(|face| {
-                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
-                    });
-                }
-                Flatness::Right => {
-                    right.map(|face| parent.spawn((face::Right, face)));
-                    left.map(|face| {
-                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
-                    });
-                }
-                Flatness::Both => {
-                    left.clone().map(|face| parent.spawn((face::Left, face)));
-                    right.clone().map(|face| {
-                        parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
-                    });
-                    right.map(|face| parent.spawn((face::Right, face)));
-                    left.map(|face| {
-                        parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0)))
-                    });
-                }
-            }
+            left.map(|face| parent.spawn((face::Left, face)));
+            left_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0))));
+
+            right.map(|face| parent.spawn((face::Right, face)));
+            right_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0))));
 
             const FLAT_OFFSET: f32 = 24.0 / 64.0;
-            match tb_flat {
-                Flatness::None => {
-                    top.map(|face| parent.spawn((face::Top, face)));
-                    bottom.map(|face| parent.spawn((face::Bottom, face)));
-                }
-                Flatness::Left => {
-                    top.map(|face| parent.spawn((face::Top, face)));
-                    bottom.map(|face| {
-                        parent.spawn((
-                            face::Bottom,
-                            face,
-                            Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
-                        ))
-                    });
-                }
-                Flatness::Right => {
-                    top.map(|face| {
-                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
-                    });
-                    bottom.map(|face| parent.spawn((face::Bottom, face)));
-                }
-                Flatness::Both => {
-                    top.clone().map(|face| parent.spawn((face::Top, face)));
-                    bottom.clone().map(|face| {
-                        parent.spawn((
-                            face::Bottom,
-                            face,
-                            Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
-                        ))
-                    });
-                    top.map(|face| {
-                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
-                    });
-                    bottom.map(|face| parent.spawn((face::Bottom, face)));
-                }
-            }
+            top.map(|face| parent.spawn((face::Top, face)));
+            top_flat.flatten().map(|face| {
+                parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
+            });
+
+            bottom.map(|face| parent.spawn((face::Bottom, face)));
+            bottom_flat.flatten().map(|face| {
+                parent.spawn((
+                    face::Bottom,
+                    face,
+                    Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
+                ))
+            });
         });
 }
 
@@ -698,14 +653,12 @@ pub(crate) fn spawn_45_degree(
     });
 
     let left_flat = left.flat.then(|| {
-        println!("left flat: {pos:?}");
         let mut right = right.clone();
         right.flat = true;
         get_face(&right, "degree_45.right")
     });
 
     let right_flat = right.flat.then(|| {
-        println!("right flat: {pos:?}");
         let mut left = left.clone();
         left.flat = true;
         get_face(&left, "degree_45.left")

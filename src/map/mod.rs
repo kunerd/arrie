@@ -33,8 +33,8 @@ use crate::loader::{StyleFileAsset, StyleFileAssetLoader};
 pub fn plugin(app: &mut App) {
     let game_files_path = check_and_get_game_files_path();
     app.insert_resource(game_files_path)
-        .insert_resource(CurrentMap(Maps::Downtown))
-        // .insert_resource(CurrentMap(Maps::Residential))
+        // .insert_resource(CurrentMap(Maps::Downtown))
+        .insert_resource(CurrentMap(Maps::Residential))
         // .insert_resource(CurrentMap(Maps::Industrial))
         .add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, MyExtension>,
