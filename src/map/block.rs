@@ -337,9 +337,9 @@ pub fn spawn_partial(
             };
 
             if face.flip {
-                rotation -= compensation;
-            } else {
                 rotation += compensation;
+            } else {
+                rotation -= compensation;
             };
         };
 
@@ -428,30 +428,65 @@ pub fn spawn_partial(
         .with_children(|parent| {
             lid.map(|face| parent.spawn((face::Lid, face)));
 
-            left.map(|face| parent.spawn((face::Left, face)));
-            left_flat
-                .flatten()
-                .map(|face| parent.spawn((face::Left, face, Transform::from_xyz(1.0, 0.0, 0.0))));
-
-            right.map(|face| parent.spawn((face::Right, face)));
-            right_flat
-                .flatten()
-                .map(|face| parent.spawn((face::Right, face, Transform::from_xyz(-1.0, 0.0, 0.0))));
+            match (left_flat, right_flat) {
+                (None, Some(right_flat)) => {
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    right_flat.map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                }
+                (Some(left_flat), None) => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    left_flat.map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                }
+                (left_flat, right_flat) => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    left_flat.flatten().map(|face| {
+                        parent.spawn((face::Left, face, Transform::from_xyz(-1.0, 0.0, 0.0)))
+                    });
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    right_flat.flatten().map(|face| {
+                        parent.spawn((face::Right, face, Transform::from_xyz(1.0, 0.0, 0.0)))
+                    });
+                }
+            };
 
             const FLAT_OFFSET: f32 = 24.0 / 64.0;
-            top.map(|face| parent.spawn((face::Top, face)));
-            top_flat.flatten().map(|face| {
-                parent.spawn((face::Top, face, Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0)))
-            });
+            match (top_flat, bottom_flat) {
+                (None, Some(bottom_flat)) => {
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                    bottom_flat.map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                }
+                (Some(top_flat), None) => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    top_flat.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, FLAT_OFFSET, 0.0)))
+                    });
+                }
+                (top_flat, bottom_flat) => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    top_flat.flatten().map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, FLAT_OFFSET, 0.0)))
+                    });
 
-            bottom.map(|face| parent.spawn((face::Bottom, face)));
-            bottom_flat.flatten().map(|face| {
-                parent.spawn((
-                    face::Bottom,
-                    face,
-                    Transform::from_xyz(0.0, FLAT_OFFSET, 0.0),
-                ))
-            });
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                    bottom_flat.flatten().map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                }
+            }
         });
 }
 
@@ -515,25 +550,35 @@ pub fn three_sided_diagonal(
         })
     };
 
-    let top = &voxel.top;
     let left = &voxel.left;
-    let bottom = &voxel.bottom;
+    let top = &voxel.top;
     let right = &voxel.right;
+    let bottom = &voxel.bottom;
 
-    let (left, top, right) = match diagonal_type {
-        DiagonalType::DownLeft => (left, top, right),
-        DiagonalType::DownRight => (right, left, top),
-        DiagonalType::UpRight => (right, bottom, left),
-        DiagonalType::UpLeft => (left, right, bottom),
+    let (left, top, right, bottom) = match diagonal_type {
+        DiagonalType::DownLeft => (left, top, right, bottom),
+        DiagonalType::DownRight => (right, left, top, bottom),
+        DiagonalType::UpRight => (right, bottom, left, top),
+        DiagonalType::UpLeft => (left, right, bottom, top),
     };
 
-    // TODO: impl flatness
-    // match (left.flat, right.flat) {
-    //     (true, true) => println!("3-side both flat: {:?}", pos),
-    //     (true, false) => println!("3-side left flat: {:?}", pos),
-    //     (false, true) => println!("3-side right flat {:?}", pos),
-    //     (false, false) => {}
-    // }
+    let top_flat = top.flat.then(|| {
+        let mut bottom = bottom.clone();
+        bottom.flat = true;
+        get_face(&bottom, "3_sided.right")
+    });
+
+    let right_flat = right.flat.then(|| {
+        let mut left = left.clone();
+        left.flat = true;
+        get_face(&left, "3_sided.top")
+    });
+
+    let left_flat = left.flat.then(|| {
+        let mut left_rev = right.clone();
+        left_rev.flat = true;
+        get_face(&left_rev, "3_sided.lid.flat")
+    });
 
     let left = get_face(&left, "3_sided.lid");
     let top = get_face(&top, "3_sided.top");
@@ -553,8 +598,29 @@ pub fn three_sided_diagonal(
         .spawn((Block { pos }, ThreeSided, transform, Visibility::Visible))
         .with_children(|parent| {
             left.map(|face| parent.spawn((face::Left, face)));
+            left_flat
+                .flatten()
+                .map(|face| parent.spawn((face::Left, face)));
+
             top.map(|face| parent.spawn((face::Top, face)));
+            top_flat.flatten().map(|face| {
+                parent.spawn((
+                    face::Top,
+                    face,
+                    Transform::from_xyz(0.0, 1.0, 0.0)
+                        .with_rotation(Quat::from_rotation_z(-0.25 * TAU)),
+                ))
+            });
+
             right.map(|face| parent.spawn((face::Right, face)));
+            right_flat.flatten().map(|face| {
+                parent.spawn((
+                    face::Right,
+                    face,
+                    Transform::from_xyz(1.0, 0.0, 0.0)
+                        .with_rotation(Quat::from_rotation_z(0.25 * TAU)),
+                ))
+            });
         });
 }
 
