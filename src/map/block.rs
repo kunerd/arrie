@@ -769,3 +769,219 @@ impl From<Position> for Vec3 {
         }
     }
 }
+
+pub fn partial_corner(
+    pos: Position,
+    voxel: &BlockInfo,
+    partial_pos: &file::CornerPosition,
+    block_gltf: &Gltf,
+    assets_gltfmesh: &Assets<GltfMesh>,
+    textures: &TextureIndex,
+    ext_materials: &mut Assets<ExtendedMaterial<StandardMaterial, MyExtension>>,
+    commands: &mut Commands<'_, '_>,
+) {
+    let mut get_face = |face: &file::Face, name| {
+        if face.tile_id == 0 {
+            return None;
+        }
+
+        let handle = block_gltf
+            .named_meshes
+            .get(name)
+            .unwrap_or_else(|| panic!("named mesh [{name}] to be found"))
+            .clone();
+
+        let mesh = &assets_gltfmesh
+            .get(&handle)
+            .unwrap_or_else(|| panic!("mesh [{name}] to exist"))
+            .primitives[0]
+            .mesh;
+
+        let base_color_texture = textures
+            .index
+            .get(&face.tile_id)
+            .unwrap_or_else(|| panic!("texture for tile_id: {} to be found", face.tile_id))
+            .clone();
+
+        // NOTE: we need to compensate the UV map rotation of the lid that
+        // occurs while rotating the base 3D model
+        let rotation = face.rotate.clockwise_rad();
+        // if let file::FaceKind::Lid = face.kind {
+        //     let compensation = match partial_pos {
+        //         file::CornerPosition::TopLeft => 0.0,
+        //         file::CornerPosition::BottomLeft => 0.25 * TAU,
+        //         file::CornerPosition::BottomRight => 0.5 * TAU,
+        //         file::CornerPosition::TopRight => 0.75 * TAU,
+        //     };
+
+        //     if face.flip {
+        //         rotation -= compensation;
+        //     } else {
+        //         rotation += compensation;
+        //     };
+        // };
+
+        // TODO could be optimized by re-using ext material with same properties
+        let ext_material = ext_materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(base_color_texture),
+                // NOTE: transperency is only allowed in flat faces
+                alpha_mode: if face.flat {
+                    AlphaMode::AlphaToCoverage
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            },
+            extension: MyExtension::new(face.flip, rotation),
+        });
+
+        Some(Face {
+            mesh: Mesh3d(mesh.clone()),
+            material: MeshMaterial3d(ext_material),
+        })
+    };
+
+    let lid = &voxel.lid;
+    let left = &voxel.left;
+    let top = &voxel.top;
+    let right = &voxel.right;
+    let bottom = &voxel.bottom;
+
+    // let (rotation, left, top, right, bottom) = match partial_pos {
+    //     file::CornerPosition::TopLeft => (0.0, left, top, right, bottom),
+    //     file::CornerPosition::BottomLeft => (0.25 * TAU, bottom, right, top, left),
+    //     file::CornerPosition::BottomRight => (0.5 * TAU, right, top, left, bottom),
+    //     file::CornerPosition::TopRight => (0.75 * TAU, top, left, bottom, right),
+    // };
+
+    let top_flat = top.flat.then(|| {
+        let mut bottom = bottom.clone();
+        bottom.flat = true;
+        get_face(&bottom, "partial_corner.bottom")
+    });
+
+    let bottom_flat = top.flat.then(|| {
+        let mut top = top.clone();
+        top.flat = true;
+        get_face(&top, "partial_corner.top")
+    });
+
+    let left_flat = left.flat.then(|| {
+        let mut right = right.clone();
+        right.flat = true;
+        get_face(&right, "partial_corner.right")
+    });
+
+    let right_flat = right.flat.then(|| {
+        let mut left = left.clone();
+        left.flat = true;
+        get_face(&left, "partial_corner.left")
+    });
+
+    let lid = get_face(lid, "partial_corner.lid");
+    let left = get_face(left, "partial_corner.left");
+    let top = get_face(top, "partial_corner.top");
+    let right = get_face(right, "partial_corner.right");
+    let bottom = get_face(bottom, "partial_corner.bottom");
+
+    const PARTIAL_POS_OFFSET: f32 = (64.0 - 24.0) / 64.0 / 2.0;
+    let transform = match partial_pos {
+        file::CornerPosition::TopLeft => {
+            Transform::from_xyz(-PARTIAL_POS_OFFSET, PARTIAL_POS_OFFSET, 0.0)
+        }
+        file::CornerPosition::BottomLeft => {
+            Transform::from_xyz(-PARTIAL_POS_OFFSET, -PARTIAL_POS_OFFSET, 0.0)
+        }
+        file::CornerPosition::BottomRight => {
+            Transform::from_xyz(PARTIAL_POS_OFFSET, -PARTIAL_POS_OFFSET, 0.0)
+        }
+        file::CornerPosition::TopRight => {
+            Transform::from_xyz(PARTIAL_POS_OFFSET, PARTIAL_POS_OFFSET, 0.0)
+        }
+    };
+    let transform = Transform::from_translation(Vec3::from(pos)).mul_transform(transform);
+    // .with_rotation(Quat::from_rotation_z(rotation));
+
+    commands
+        .spawn((Block { pos }, Degree45, transform, Visibility::Visible))
+        .with_children(|parent| {
+            const FLAT_OFFSET: f32 = 24.0 / 64.0;
+            lid.map(|face| parent.spawn((face::Lid, face)));
+
+            match (left_flat, right_flat) {
+                (None, Some(right_flat)) => {
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    right_flat.map(|face| {
+                        parent.spawn((
+                            face::Right,
+                            face,
+                            Transform::from_xyz(FLAT_OFFSET, 0.0, 0.0),
+                        ))
+                    });
+                }
+                (Some(left_flat), None) => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    left_flat.map(|face| {
+                        parent.spawn((
+                            face::Left,
+                            face,
+                            Transform::from_xyz(-FLAT_OFFSET, 0.0, 0.0),
+                        ))
+                    });
+                }
+                (left_flat, right_flat) => {
+                    left.map(|face| parent.spawn((face::Left, face)));
+                    left_flat.flatten().map(|face| {
+                        parent.spawn((
+                            face::Left,
+                            face,
+                            Transform::from_xyz(-FLAT_OFFSET, 0.0, 0.0),
+                        ))
+                    });
+                    right.map(|face| parent.spawn((face::Right, face)));
+                    right_flat.flatten().map(|face| {
+                        parent.spawn((
+                            face::Right,
+                            face,
+                            Transform::from_xyz(FLAT_OFFSET, 0.0, 0.0),
+                        ))
+                    });
+                }
+            };
+
+            match (top_flat, bottom_flat) {
+                (None, Some(bottom_flat)) => {
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                    bottom_flat.map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                }
+                (Some(top_flat), None) => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    top_flat.map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, FLAT_OFFSET, 0.0)))
+                    });
+                }
+                (top_flat, bottom_flat) => {
+                    top.map(|face| parent.spawn((face::Top, face)));
+                    top_flat.flatten().map(|face| {
+                        parent.spawn((face::Top, face, Transform::from_xyz(0.0, FLAT_OFFSET, 0.0)))
+                    });
+
+                    bottom.map(|face| parent.spawn((face::Bottom, face)));
+                    bottom_flat.flatten().map(|face| {
+                        parent.spawn((
+                            face::Bottom,
+                            face,
+                            Transform::from_xyz(0.0, -FLAT_OFFSET, 0.0),
+                        ))
+                    });
+                }
+            }
+        });
+}

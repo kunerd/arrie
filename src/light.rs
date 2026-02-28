@@ -22,7 +22,7 @@ fn setup_main_light(mut commands: Commands) {
         // As this example has a much smaller world, we can tighten the shadow
         // bounds for better visual quality.
         CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 4.0,
+            first_cascade_far_bound: 10.0,
             maximum_distance: 28.0,
             ..default()
         }
